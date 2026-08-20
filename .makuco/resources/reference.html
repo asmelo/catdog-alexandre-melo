@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CatDog – Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #dde0ea;
+      --card: #ffffff;
+      --purple: #7c3aed;
+      --purple-hover: #6d28d9;
+      --purple-light: #ede9fe;
+      --orange: #e05a1e;
+      --text-dark: #1e1b2e;
+      --text-mid: #4b4869;
+      --text-muted: #9896b0;
+      --border: #e4e2f0;
+      --input-bg: #f8f7fc;
+      --shadow: 0 8px 40px rgba(100, 80, 180, 0.13);
+      --radius: 14px;
+    }
+
+    body {
+      font-family: 'Nunito', sans-serif;
+      background-color: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Paw prints background */
+    .paws {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .paw {
+      position: absolute;
+      opacity: 0.18;
+      color: #b0aec8;
+    }
+
+    .paw svg {
+      width: 56px;
+      height: 56px;
+      fill: currentColor;
+    }
+
+    /* Card */
+    .card {
+      position: relative;
+      z-index: 1;
+      background: var(--card);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 44px 44px 36px;
+      width: 100%;
+      max-width: 420px;
+      animation: fadeUp 0.55s cubic-bezier(.22,1,.36,1) both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(28px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Logo */
+    .logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      margin-bottom: 22px;
+    }
+
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+    }
+
+    .logo-name {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: var(--text-dark);
+      letter-spacing: -0.3px;
+    }
+
+    /* Heading */
+    .heading { text-align: center; margin-bottom: 6px; }
+    .heading h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--text-dark);
+      margin-bottom: 5px;
+    }
+    .heading p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    /* Form */
+    .form { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
+
+    .field {
+      position: relative;
+    }
+
+    .field input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 13px 16px;
+      font-family: 'Nunito', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-dark);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .field input::placeholder {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .field input:focus {
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+    }
+
+    .eye-btn {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      padding: 0;
+      transition: color 0.15s;
+    }
+    .eye-btn:hover { color: var(--purple); }
+
+    .forgot {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--purple);
+      text-decoration: none;
+      margin-top: -4px;
+      display: inline-block;
+      transition: color 0.15s;
+    }
+    .forgot:hover { color: var(--purple-hover); text-decoration: underline; }
+
+    .btn-submit {
+      margin-top: 6px;
+      width: 100%;
+      background: var(--purple);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: 'Nunito', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 800;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 4px 16px rgba(124,58,237,0.3);
+    }
+    .btn-submit:hover {
+      background: var(--purple-hover);
+      box-shadow: 0 6px 20px rgba(124,58,237,0.4);
+    }
+    .btn-submit:active { transform: scale(0.98); }
+
+    .signup {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .signup a {
+      color: var(--purple);
+      text-decoration: none;
+      font-weight: 800;
+    }
+    .signup a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<!-- Scattered paw prints -->
+<div class="paws" id="paws"></div>
+
+<div class="card">
+
+  <!-- Logo -->
+  <div class="logo">
+    <svg class="logo-icon" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Dog silhouette in orange -->
+      <ellipse cx="20" cy="26" rx="11" ry="9" fill="#e05a1e"/>
+      <ellipse cx="13" cy="18" rx="4" ry="5.5" fill="#e05a1e" transform="rotate(-15 13 18)"/>
+      <ellipse cx="27" cy="18" rx="4" ry="5.5" fill="#e05a1e" transform="rotate(15 27 18)"/>
+      <circle cx="20" cy="20" r="8" fill="#e05a1e"/>
+      <circle cx="17.5" cy="19" r="1.2" fill="#fff"/>
+      <circle cx="22.5" cy="19" r="1.2" fill="#fff"/>
+      <ellipse cx="20" cy="22" rx="2.5" ry="1.5" fill="#c44a10"/>
+      <!-- tail -->
+      <path d="M31 28 Q37 22 34 18" stroke="#e05a1e" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+    </svg>
+    <span class="logo-name">CatDog</span>
+  </div>
+
+  <!-- Heading -->
+  <div class="heading">
+    <h1>Bem vindo!</h1>
+    <p>Digite os seus dados de acesso no campo abaixo</p>
+  </div>
+
+  <!-- Form -->
+  <div class="form">
+    <div class="field">
+      <input type="email" placeholder="Informar o seu e-mail" autocomplete="email" />
+    </div>
+
+    <div class="field">
+      <input type="password" id="pwdInput" placeholder="Informar a sua senha" autocomplete="current-password" />
+      <button class="eye-btn" type="button" onclick="togglePwd()" aria-label="Mostrar senha">
+        <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+
+    <a href="#" class="forgot">Esqueceu sua senha?</a>
+
+    <button class="btn-submit">Entrar</button>
+  </div>
+
+  <p class="signup">Não tem uma conta? <a href="#">Cadastre-se</a></p>
+</div>
+
+<script>
+  // Toggle password visibility
+  function togglePwd() {
+    const input = document.getElementById('pwdInput');
+    const icon = document.getElementById('eyeIcon');
+    if (input.type === 'password') {
+      input.type = 'text';
+      icon.innerHTML = `
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+        <line x1="1" y1="1" x2="23" y2="23"/>`;
+    } else {
+      input.type = 'password';
+      icon.innerHTML = `
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+        <circle cx="12" cy="12" r="3"/>`;
+    }
+  }
+
+  // Generate paw prints
+  (function() {
+    const container = document.getElementById('paws');
+    const pawSVG = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="50" cy="62" rx="20" ry="25" />
+      <ellipse cx="22" cy="38" rx="9" ry="12" transform="rotate(-20 22 38)"/>
+      <ellipse cx="78" cy="38" rx="9" ry="12" transform="rotate(20 78 38)"/>
+      <ellipse cx="34" cy="22" rx="8" ry="10" transform="rotate(-10 34 22)"/>
+      <ellipse cx="66" cy="22" rx="8" ry="10" transform="rotate(10 66 22)"/>
+    </svg>`;
+    const positions = [
+      [5,5],[15,75],[25,40],[40,10],[55,80],[70,20],[80,60],[90,5],[90,85],[10,50],
+      [60,50],[35,90],[48,30],[75,40],[20,20],[65,70]
+    ];
+    positions.forEach(([x, y]) => {
+      const div = document.createElement('div');
+      div.className = 'paw';
+      div.style.left = x + '%';
+      div.style.top = y + '%';
+      div.style.transform = `rotate(${Math.random()*60-30}deg)`;
+      div.innerHTML = pawSVG;
+      container.appendChild(div);
+    });
+  })();
+</script>
+</body>
+</html>
