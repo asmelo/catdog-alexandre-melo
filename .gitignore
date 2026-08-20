@@ -2,3 +2,7 @@
 .env.mcp
 .mcp.json
 .env
+
+# Artefatos de ferramentas externas (nao fazem parte do projeto)
+.playwright-mcp/
+mysql/
