@@ -1,0 +1,16 @@
+# Dependencias
+node_modules/
+
+# Build
+dist/
+
+# Variaveis de ambiente (o .env.example DEVE permanecer versionado)
+.env
+.env.local
+.env.*.local
+
+# Cobertura de testes
+coverage/
+
+# Logs
+*.log

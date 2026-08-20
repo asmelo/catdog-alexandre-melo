@@ -1,0 +1,98 @@
+// Modelo de dados da FEATURE-002 — Autenticacao Completa.
+// Convencao fisica: modelo PascalCase + campo camelCase no Prisma,
+// mapeados por @@map/@map para tabela snake_case plural e coluna snake_case.
+// Toda coluna de data usa Timestamptz(3): os TTLs de 24h (RN-02) e 7 dias
+// nao podem depender do timezone do container.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Conexao da aplicacao (pooler do Supabase, porta 6543).
+  url       = env("DATABASE_URL")
+  // Conexao direta (porta 5432): o pooler nao suporta as prepared statements
+  // exigidas pelo `prisma migrate`, e sem directUrl a migration falha.
+  directUrl = env("DIRECT_URL")
+}
+
+/// Papel do usuario. RN-08: todo usuario tem exatamente uma role.
+/// CLIENTE e mantido em PT-BR por ser o literal do contrato da spec e do glossario.
+enum UserRole {
+  ADMIN
+  CLIENTE
+}
+
+/// Situacao da conta. RN-01: somente ACTIVE pode autenticar.
+enum UserStatus {
+  PENDING_CONFIRMATION
+  ACTIVE
+}
+
+/// Motivo da revogacao de um refresh token.
+/// REUSE_DETECTED corresponde a reutilizacao indevida descrita na RN-07.
+enum RefreshTokenRevokedReason {
+  ROTATED
+  LOGOUT
+  REUSE_DETECTED
+  EXPIRED
+  ACCOUNT_DISABLED
+}
+
+/// Usuario da plataforma (administrador ou cliente).
+model User {
+  id               String     @id @default(uuid()) @db.Uuid
+  name             String     @db.VarChar(100)
+  email            String     @unique @db.VarChar(254)
+  passwordHash     String     @map("password_hash") @db.VarChar(72)
+  role             UserRole   @default(CLIENTE)
+  status           UserStatus @default(PENDING_CONFIRMATION)
+  emailConfirmedAt DateTime?  @map("email_confirmed_at") @db.Timestamptz(3)
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  emailConfirmationTokens EmailConfirmationToken[]
+  refreshTokens           RefreshToken[]
+
+  @@index([status])
+  @@map("users")
+}
+
+/// Token de uso unico do link de confirmacao de e-mail (RN-02, RN-03).
+/// tokenHash guarda SHA-256 em hexadecimal (Char(64)), nao bcrypt: o token tem
+/// 256 bits de entropia e o lookup precisa ser por igualdade indexada.
+model EmailConfirmationToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@map("email_confirmation_tokens")
+}
+
+/// Token de renovacao de sessao com rotacao obrigatoria (RN-06).
+/// familyId identifica a sessao e e o mecanismo de invalidacao em massa da RN-07.
+/// replacedById existe apenas para auditoria da cadeia de rotacao — nao usar para revogar.
+model RefreshToken {
+  id            String                     @id @default(uuid()) @db.Uuid
+  userId        String                     @map("user_id") @db.Uuid
+  familyId      String                     @map("family_id") @db.Uuid
+  tokenHash     String                     @unique @map("token_hash") @db.Char(64)
+  expiresAt     DateTime                   @map("expires_at") @db.Timestamptz(3)
+  createdAt     DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  revokedAt     DateTime?                  @map("revoked_at") @db.Timestamptz(3)
+  revokedReason RefreshTokenRevokedReason? @map("revoked_reason")
+  replacedById  String?                    @unique @map("replaced_by_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([familyId, revokedAt])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
