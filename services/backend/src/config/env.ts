@@ -6,7 +6,7 @@ import 'dotenv/config';
 import { z } from 'zod';
 
 /**
- * Ponto UNICO de leitura de `process.env` em todo o backend.
+ * Ponto UNICO de leitura de `process.env` em todos os modulos do backend.
  * O `safeParse` roda no import: env invalida derruba o boot com mensagem
  * legivel em vez de propagar `undefined` silenciosamente em producao.
  */
