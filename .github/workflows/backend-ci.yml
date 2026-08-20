@@ -1,0 +1,88 @@
+# CI do backend CatDog.
+# Fixa o Node no mesmo 20 LTS declarado em `.nvmrc` e em
+# `services/backend/package.json` (engines: >=20 <21) — a maquina de
+# desenvolvimento roda uma versao diferente, entao este workflow e a
+# unica validacao que vale como prova de compatibilidade.
+name: Backend CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# Um push novo na mesma ref cancela a execucao anterior.
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: services/backend
+
+jobs:
+  build:
+    name: typecheck + build (Node 20)
+    runs-on: ubuntu-latest
+
+    env:
+      # `prisma validate` resolve os `env()` do datasource em tempo de parse e
+      # falha com P1012 ("Environment variable not found: DIRECT_URL") se as
+      # variaveis nao existirem. Os valores abaixo sao DUMMY e servem apenas
+      # para satisfazer o parser: nenhum passo deste workflow abre conexao com
+      # banco. As portas espelham o contrato do Supabase (6543 pooler / 5432
+      # direta) para que o formato validado seja o mesmo usado em execucao.
+      DATABASE_URL: postgresql://ci:ci@localhost:6543/ci?pgbouncer=true&connection_limit=1
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `node-version-file` aponta para o `.nvmrc` da raiz do repositorio
+      # (resolvido a partir de GITHUB_WORKSPACE, nao de `working-directory`),
+      # mantendo uma unica fonte da verdade entre CI e maquina local.
+      - name: Configura Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: services/backend/package-lock.json
+
+      - name: Confere versoes fixadas
+        run: node -v && npm -v
+
+      # `npm ci` falha se package.json e package-lock.json divergirem, e
+      # respeita `engines` sem emitir EBADENGINE quando o Node esta correto.
+      - name: Instala dependencias
+        run: npm ci
+
+      - name: Valida o schema Prisma
+        run: npx prisma validate
+
+      # Redundante com o postinstall do @prisma/client, mas explicito: o
+      # typecheck depende dos tipos gerados do client.
+      - name: Gera o Prisma Client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # Passo preparado para a TASK-BACKEND-007. Enquanto nao existir o script
+      # `test` no package.json, registra um aviso visivel no resumo do job em
+      # vez de passar em silencio; assim que a suite for adicionada, passa a
+      # executa-la automaticamente, sem editar este workflow.
+      - name: Testes
+        run: |
+          if [ "$(npm pkg get scripts.test)" = '{}' ]; then
+            echo "::notice title=Testes pendentes::Nenhum script 'test' em services/backend/package.json — suite automatizada prevista na TASK-BACKEND-007. Cobertura atual: 0%."
+          else
+            npm test
+          fi
