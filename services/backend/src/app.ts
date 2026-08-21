@@ -1,11 +1,14 @@
 import 'express-async-errors';
 
 import cookieParser from 'cookie-parser';
-import cors, { type CorsOptions } from 'cors';
+import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 
+import { corsOptions } from '~/config/cors';
 import { env } from '~/config/env';
+import { errorHandlerMiddleware } from '~/middlewares/error-handler.middleware';
+import { notFoundMiddleware } from '~/middlewares/not-found.middleware';
 import { router } from '~/routes';
 
 /**
@@ -13,13 +16,6 @@ import { router } from '~/routes';
  * e essa separacao que permite os testes de integracao com supertest
  * (TASK-BACKEND-007).
  */
-
-// `credentials: true` e obrigatorio para o cookie de refresh e e incompativel
-// com `origin: '*'` — por isso a lista explicita de origens.
-const opcoesDeCors: CorsOptions = {
-  origin: [...env.CORS_ALLOWED_ORIGINS],
-  credentials: true,
-};
 
 export const app: Express = express();
 
@@ -29,11 +25,15 @@ if (env.NODE_ENV === 'production') {
 }
 
 app.use(helmet());
-app.use(cors(opcoesDeCors));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10kb' }));
 app.use(cookieParser());
 
 app.use('/api', router);
 
-// TODO(TASK-BACKEND-002): registrar aqui, apos as rotas, os middlewares
-// `notFound` e `errorHandler`.
+// A ordem importa: `notFound` precisa vir DEPOIS das rotas (para so ser
+// alcancado quando nenhuma casou) e ANTES do `errorHandler` (que e quem
+// transforma o erro lancado por ele na resposta 404). Invertida, toda rota
+// inexistente responderia 500.
+app.use(notFoundMiddleware);
+app.use(errorHandlerMiddleware);
