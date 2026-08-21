@@ -1,0 +1,20 @@
+CatDog
+
+Olá, {{userName}}!
+
+Falta só um passo para sua conta ficar pronta. Confirme seu e-mail e comece a
+conhecer os bichinhos que estão à espera de um lar.
+
+Confirme sua conta abrindo o endereço abaixo:
+
+{{confirmationUrl}}
+
+Este link expira em {{expirationHours}} horas.
+
+Não pediu esse cadastro? Você pode ignorar esta mensagem com tranquilidade —
+sem a confirmação, nenhuma conta é ativada.
+
+Dúvidas? Escreva para {{supportEmail}}
+
+--
+CatDog — adoção e venda responsável de animais de estimação.
