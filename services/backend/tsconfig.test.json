@@ -1,0 +1,26 @@
+{
+  // Verificacao de tipos da SUITE DE TESTES: os `.spec.ts` de `src/` (excluidos do
+  // `tsconfig.json` para nao vazarem para o `dist/`), tudo em `tests/` e o proprio
+  // `jest.config.ts`.
+  //
+  // Existe como projeto separado pelo mesmo motivo do `tsconfig.seed.json`: o
+  // `tsconfig.json` declara `rootDir: "src"` para que o `dist/` espelhe `src/`, e
+  // acrescentar `tests/**/*.ts` ao `include` de la faz o `tsc` abortar com TS6059
+  // ("not under rootDir"). Aqui `rootDir` e a raiz do servico e `noEmit` esta
+  // ligado — nada deste projeto e emitido.
+  //
+  // E este arquivo que o `ts-jest` usa (ver `jest.config.ts`), portanto os specs
+  // sao type-checked em DOIS momentos: no `npm run typecheck` e na propria
+  // execucao da suite, com as mesmas flags estritas do codigo de producao
+  // (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "jest.config.ts"],
+  // O `exclude` do arquivo base (que remove `src/**/*.spec.ts`) precisa ser
+  // sobrescrito, senao os specs ficariam fora dos DOIS projetos e sem verificacao
+  // de tipos nenhuma.
+  "exclude": ["node_modules", "dist"]
+}

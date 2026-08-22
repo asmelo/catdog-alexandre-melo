@@ -64,7 +64,7 @@ Fecha o critério de aceite de qualidade da spec no lado servidor: cobertura mí
 - Um `describe` por service; cada `it` nomeado pelo ID do caso de teste da spec, para rastreabilidade direta — ex.: `it('CT-15: reutilização de refresh token rotacionado encerra a sessão', ...)`.
 - `register-user.service.spec.ts` cobre CT-01, CT-02, CT-04, CT-18 + o ramo de falha de SMTP (cadastro permanece criado e o service não lança).
 - `confirm-email.service.spec.ts` cobre CT-06, CT-07, CT-08, o token inexistente, e a corrida (`consume` retornando 0 ⇒ "já utilizado").
-- `refresh-session.service.spec.ts` cobre CT-14, CT-15, refresh expirado, conta desativada, e — o teste mais importante do slice — **verifica que após reuso todos os tokens da família ficam com `revokedReason = 'REUSE_DETECTED'`**, não apenas o token apresentado.
+- `refresh-session.service.spec.ts` cobre CT-14, CT-15, refresh expirado, conta desativada, e — o teste mais importante do slice — **verifica que após reuso nenhum token da família permanece utilizável**: todos com `revokedAt != null`, os que ainda estavam ativos com `revokedReason = 'REUSE_DETECTED'`, e os já revogados preservando o motivo original (o token reapresentado permanece `ROTATED`). Verificar também que o token legítimo mais recente passa a ser rejeitado — é ele que prova que a sessão inteira caiu.
 - Padrão AAA explícito; asserções sobre a mensagem PT-BR literal quando ela é o contrato.
 
 ### `tests/integration/auth-routes.spec.ts` *(create)*
@@ -89,7 +89,8 @@ Fecha o critério de aceite de qualidade da spec no lado servidor: cobertura mí
 - [ ] **Given** a suíte, **When** executada duas vezes seguidas e em ordem aleatória, **Then** o resultado é idêntico (sem dependência de ordem, relógio real ou estado compartilhado).
 - [ ] **Given** a suíte, **When** executada sem rede e sem `DATABASE_URL` real, **Then** passa integralmente — nenhum teste abre conexão de banco ou SMTP.
 - [ ] **Given** os nomes dos testes, **When** listados, **Then** existe pelo menos um `it` referenciando cada um dos IDs CT-01, CT-02, CT-04, CT-06, CT-07, CT-08, CT-09, CT-10, CT-11, CT-12, CT-13, CT-14, CT-15, CT-18.
-- [ ] **Given** o teste de reuso de refresh token, **When** executado, **Then** afirma que **todos** os registros do `familyId` ficaram revogados com `REUSE_DETECTED`, não apenas o apresentado.
+- [ ] **Given** o teste de reuso de refresh token, **When** executado, **Then** afirma que **todos** os registros do `familyId` ficaram com `revokedAt != null` — os que estavam ativos com `revokedReason = 'REUSE_DETECTED'` e os já revogados preservando o motivo original — e que o token legítimo mais recente também passa a ser rejeitado.
+  > **Nota (corrigido em 2026-08-22):** a redação anterior exigia `REUSE_DETECTED` em *todos* os tokens. Isso é incompatível com o `revokeFamily` implementado na TASK-BACKEND-005 (`where: { familyId, revokedAt: null }`), cuja AC #7 foi corrigida pelo mesmo motivo: o token que dispara a detecção já está revogado como `ROTATED` e o filtro o exclui por construção. Um teste escrito na letra anterior falharia contra a implementação já validada, ou levaria a "corrigir" código correto — sobrescrever o `ROTATED` destruiria a informação de que aquele token foi legitimamente rotacionado.
 - [ ] **Given** os testes de CT-11 e CT-12, **When** comparadas as respostas, **Then** status, `code` e `message` são idênticos.
 - [ ] **Given** `npm run test:cov`, **When** concluído, **Then** `coverage/lcov.info` existe e é referenciado por `sonar.javascript.lcov.reportPaths`.
 - [ ] **Given** o Quality Gate do Sonar, **When** executado, **Then** aprova sem bloqueadores e sem issue de segurança Blocker/Critical.

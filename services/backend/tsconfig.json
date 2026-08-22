@@ -25,5 +25,14 @@
     "declaration": false
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  // Os `.spec.ts` que vivem dentro de `src/` (tabela *Files* da TASK-BACKEND-007)
+  // sao excluidos daqui por DOIS motivos, nao um:
+  //   1. `npm run build` usa este arquivo e emitiria `dist/**/*.spec.js` — arquivo
+  //      de teste no bundle de producao, carregando `@types/jest` e os fakes.
+  //   2. `npm run typecheck` (tsc --noEmit) nao ve `describe`/`it`/`expect`, que
+  //      sao globais de `@types/jest`, e acusaria erro em cada spec.
+  // Os specs NAO ficam sem verificacao de tipos: `tsconfig.test.json` os compila
+  // com `noEmit` e o `typecheck` roda os tres projetos. Mesmo padrao do
+  // `tsconfig.seed.json`, que ja existia para o que vive fora de `src/`.
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts"]
 }
