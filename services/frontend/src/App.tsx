@@ -1,29 +1,17 @@
 import type { ReactElement } from 'react';
 
+import { AppRoutes } from '~/routes/app-routes';
+
 /**
- * Placeholder de verificacao do design system.
+ * Raiz da aplicacao.
  *
- * Nao e tela nem componente reutilizavel: e a prova visual de que os tokens do
- * `reference.html` chegaram ao Tailwind. Exercita deliberadamente as sete
- * classes cobradas pelo criterio de aceite 6 — `max-w-card`, `p-card`,
- * `animate-fadeUp`, `rounded-field`, `bg-brand-purple`, `shadow-button` e
- * `text-ink-muted` — porque o Tailwind so emite a regra de uma classe que
- * aparece no `content`; sem uso real, o CSS gerado nao conteria nada a inspecionar.
- *
- * Sera substituido pelo roteador na TASK-FRONTEND-011.
+ * Fina de proposito: substitui o placeholder de verificacao dos tokens da
+ * TASK-FRONTEND-008 e nao acrescenta nada por cima do roteador. O
+ * `<BrowserRouter>` e o `<AuthProvider>` ficam em `main.tsx`, um nivel acima —
+ * com eles aqui, qualquer teste que montasse `<App />` precisaria de um
+ * navegador, e as guardas nao poderiam ser exercitadas sob um
+ * `MemoryRouter` (TASK-FRONTEND-013).
  */
 export function App(): ReactElement {
-  return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <section className="w-full max-w-card animate-fadeUp rounded-card bg-surface-card p-card shadow-card">
-        <h1 className="text-center text-2xl font-extrabold text-ink">CatDog</h1>
-        <p className="mt-2 text-center text-sm font-semibold text-ink-muted">
-          Design system carregado. Este cartão é um placeholder de verificação dos tokens.
-        </p>
-        <div className="mt-6 rounded-field bg-brand-purple p-3 text-center text-sm font-extrabold text-white shadow-button">
-          Amostra de token
-        </div>
-      </section>
-    </main>
-  );
+  return <AppRoutes />;
 }
