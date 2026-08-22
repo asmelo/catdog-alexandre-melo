@@ -9,7 +9,7 @@
 
 **Versão:** v1.1
 **Spec original aprovada em:** _YYYY-MM-DD por Nome_
-**Última alteração:** 2026-05-27
+**Última alteração:** 2026-08-22 (ALT-002 — registro de decisão; o corpo da spec **não** foi editado)
 
 ---
 
@@ -59,6 +59,51 @@ Decisões tomadas pelo responsável do produto após a criação da spec v1.0, c
 | O que Não Deve Ser Feito | Role listada como `admin` / `cliente` |
 
 **Seções da spec atualizadas:** Objetivo da Feature, Quem Acessa, Dependências, Referências e Insumos, HU-03, HU-05, Regras de Negócio, Requisitos Funcionais (Ações 3 e 5, Validações), Integrações, Casos de Teste, Critérios de Aceite, O que Não Deve Ser Feito
+
+---
+
+### ALT-002 — Mensagens ao usuário não previstas na tabela da spec (decisão de implementação)
+
+**Data:** 2026-08-22
+**Solicitado por:** Contrato da TASK-BACKEND-004 ("registrar no changelog da spec como decisão")
+**Realizado por:** Makuco Code-Gen — TASK-BACKEND-004
+**Aprovado por:** _A preencher_
+
+**O que mudou:**
+Nada no corpo da spec — `spec_context.md` **não foi editado**. Esta entrada registra as strings voltadas ao usuário que a implementação do registro/confirmação precisou criar porque a tabela "Mensagens ao Usuário" não as prevê. Todas vivem em um único catálogo (`services/backend/src/domains/auth/auth.messages.ts`).
+
+**Antes:**
+A tabela "Mensagens ao Usuário" cobre 11 condições: registro bem-sucedido, e-mail já cadastrado, senhas não coincidem, senha curta, campo obrigatório em branco, link válido, link expirado, link já utilizado, credenciais inválidas, conta não confirmada e sessão expirada.
+
+**Depois:**
+Acrescentadas ao catálogo de implementação (sem alterar a spec):
+
+| Chave | Texto | Por que era inevitável |
+|---|---|---|
+| `CONFIRMATION_TOKEN_INVALID` | "Link de confirmação inválido." | A spec prevê link expirado e link já utilizado, mas não token inexistente/adulterado — que é o caso mais comum de link truncado por cliente de e-mail. |
+| `RESEND_GENERIC` | "Se houver uma conta pendente para este e-mail, enviamos um novo link de confirmação." | O endpoint de reenvio não existe na spec, mas o texto dela manda "Solicite um novo e-mail de confirmação". A mensagem é deliberadamente ambígua para não revelar se o e-mail existe (mesmo espírito da RN-05). |
+| `REQUEST_BODY_INVALID` | "Corpo da requisição inválido." | Corpo que não é objeto JSON. |
+| `UNEXPECTED_FIELD` | "Campo não permitido nesta requisição." | Recusa de `confirmPassword` e de qualquer campo extra (RN-12). |
+| `NAME_TOO_SHORT` / `NAME_TOO_LONG` | "O nome deve ter no mínimo 2 caracteres." / "...no máximo 100 caracteres." | A spec fixa os limites 2 e 100 sem dar o texto; sem eles o Zod responderia em inglês. |
+| `EMAIL_INVALID` / `EMAIL_TOO_LONG` | "Informe um e-mail válido." / "O e-mail deve ter no máximo 254 caracteres." | Idem: a spec exige e-mail válido sem definir a mensagem. |
+| `PASSWORD_TOO_LONG` | "A senha deve ter no máximo 72 caracteres." | Limite técnico do bcrypt, ausente da spec. |
+| `PASSWORD_TOO_LONG_IN_BYTES` | "A senha é muito longa. Acentos e emojis ocupam mais de um caractere — use uma senha mais curta." | O bcrypt trunca em 72 **bytes** e uma senha acentuada estoura os bytes com menos de 72 caracteres — repetir "72 caracteres" seria enganoso para quem digitou exatamente 72. |
+| `CONFIRMATION_MAIL_SUBJECT` | "Confirme sua conta na CatDog" | Assunto do e-mail transacional, não previsto em nenhuma tabela. |
+
+**Correção de premissa do plano da task:** a TASK-BACKEND-004 lista `FIELD_REQUIRED` ("Este campo é obrigatório.") como uma das três mensagens "não previstas na spec". Ela **está** na tabela da spec ("Campo obrigatório em branco"). Logo, as mensagens realmente novas de negócio são **duas**, não três — o restante da lista acima é vocabulário de validação de campo.
+
+**Por que mudou:**
+Cada string acima é exibida ao usuário final. Sem catalogá-las, o backend responderia mensagens em inglês do Zod (ex.: "String must contain at least 2 character(s)") num produto declaradamente PT-BR.
+
+**Impacto:**
+
+| Área impactada | Descrição do impacto |
+|---|---|
+| Mensagens ao Usuário | A tabela da spec fica incompleta em relação ao que a API responde; recomenda-se absorver as linhas acima na próxima revisão do documento. |
+| TASK-FRONTEND-012 | As telas de registro/confirmação passam a poder exibir essas mensagens vindas do backend; o frontend continua ramificando por `code`, não por texto. |
+| Nenhuma regra de negócio | Nenhuma RN foi alterada, criada ou reinterpretada. |
+
+**Seções da spec atualizadas:** nenhuma — entrada apenas de registro de decisão.
 
 ---
 
