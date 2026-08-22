@@ -1,0 +1,29 @@
+{
+  // Verificacao de tipos da SUITE DE TESTES: os `.spec.ts`/`.spec.tsx` de `src/`
+  // (excluidos do `tsconfig.json` para nao quebrarem o `npm run build`), tudo em
+  // `tests/` e o proprio `jest.config.ts`.
+  //
+  // Projeto separado pelo mesmo motivo do `tsconfig.test.json` do backend: o
+  // projeto de producao nao pode conhecer os globais de teste, e acrescentar
+  // `"jest"` ao `types` de la faria o build de producao depender de tipos de
+  // teste sem resolver o problema do type-check dos specs.
+  //
+  // O `babel-jest` NAO usa este arquivo (ele apaga os tipos sem verificar
+  // nenhum), diferente do `ts-jest` do backend. E por isso que `npm run typecheck`
+  // e a UNICA verificacao de tipos dos specs do frontend, e por isso que ele roda
+  // os dois projetos.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // `jest` traz `describe`/`it`/`expect`/`jest`; `node` traz `path` e
+    // `__dirname`, usados pelo `jest.config.ts` para calcular o `projectRoot` do
+    // relatorio de cobertura. `vite/client` e mantido porque os specs importam
+    // modulos de `src/` que dependem dele.
+    "types": ["vite/client", "jest", "node"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "jest.config.ts"],
+  // O `exclude` do arquivo base (que remove os specs de `src/`) precisa ser
+  // sobrescrito, senao os specs ficariam fora dos DOIS projetos e sem verificacao
+  // de tipos nenhuma.
+  "exclude": ["node_modules", "dist"]
+}

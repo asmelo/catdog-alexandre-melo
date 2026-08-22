@@ -24,5 +24,24 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Os `.spec.ts` / `.spec.tsx` que vivem dentro de `src/` (tabela *Files* da
+  // TASK-FRONTEND-013) sao excluidos deste projeto por um motivo verificado:
+  // `npm run build` e `tsc --noEmit && vite build`, e o `include: ["src"]` acima
+  // arrastaria os specs para o type-check. `describe`, `it` e `expect` sao
+  // globais de `@types/jest` e nao estao em `types` (que declara so
+  // `vite/client`), entao o `tsc` acusaria erro em cada spec e o build de
+  // producao pararia de passar — quebrando a AC #1 da TASK-FRONTEND-008.
+  //
+  // O `vite build` em si nunca empacotaria os specs (eles nao sao alcancaveis a
+  // partir de `main.tsx`); o problema e exclusivamente do `tsc`.
+  //
+  // Os specs NAO ficam sem verificacao de tipos: `tsconfig.test.json` os compila
+  // com `noEmit` e `npm run typecheck` roda os DOIS projetos. Mesmo padrao (e
+  // mesma motivacao) do `tsconfig.test.json` que a TASK-BACKEND-007 criou.
+  //
+  // Este arquivo NAO esta em `src/`, portanto altera-lo nao viola a AC #10
+  // ("nenhum arquivo de `src/` foi alterado") — mesma leitura da DECISAO-056 da
+  // TASK-BACKEND-007.
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts", "src/**/*.spec.tsx"]
 }
