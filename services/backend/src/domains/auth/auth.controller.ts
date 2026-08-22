@@ -1,3 +1,4 @@
+import type { UserStatus } from '@prisma/client';
 import type { Request, RequestHandler, Response } from 'express';
 
 import { MESSAGES } from '~/domains/auth/auth.messages';
@@ -7,12 +8,19 @@ import type {
   RegisterInput,
   ResendConfirmationInput,
 } from '~/domains/auth/auth.validators';
-import type { AuthenticatedUser } from '~/domains/auth/mappers/user.mapper';
+import { SessionExpiredError } from '~/domains/auth/errors/session.errors';
+import {
+  toAuthenticatedUser,
+  type AuthenticatedUser,
+} from '~/domains/auth/mappers/user.mapper';
 import {
   PrismaEmailConfirmationTokenRepository,
 } from '~/domains/auth/repositories/email-confirmation-token.repository';
 import { PrismaRefreshTokenRepository } from '~/domains/auth/repositories/refresh-token.repository';
-import { PrismaUserRepository } from '~/domains/auth/repositories/user.repository';
+import {
+  PrismaUserRepository,
+  type UserRepository,
+} from '~/domains/auth/repositories/user.repository';
 import {
   buildRefreshCookieOptions,
   clearRefreshCookie,
@@ -73,6 +81,29 @@ type ManipuladorDeSessao<Corpo> = RequestHandler<SemParametros, RespostaDeSessao
 type ManipuladorSemCorpo = RequestHandler<SemParametros, void, unknown>;
 
 /**
+ * Corpo do `GET /me`. E a projecao publica do login/refresh MAIS `status`: o
+ * frontend usa `/me` para hidratar a sessao no boot (TASK-FRONTEND-010) e, ali,
+ * saber que a conta esta ativa importa — no login isso e implicito, porque conta
+ * nao confirmada nem recebe token.
+ *
+ * `status` sai no vocabulario do enum (`ACTIVE`), em MAIUSCULAS, enquanto `role`
+ * sai em minusculas. A assimetria e deliberada: o lowercase de `role` e contrato
+ * (do JWT, dos criterios de aceite e dos caminhos de rota) e tem tabela de
+ * conversao propria em `user.mapper.ts`; `status` nao tem vocabulario publico
+ * declarado em nenhum lugar da spec, e inventar um aqui exigiria uma segunda
+ * tabela de conversao no mapper, que esta fora do escopo desta task.
+ */
+interface RespostaDeUsuarioAutenticado extends AuthenticatedUser {
+  readonly status: UserStatus;
+}
+
+type ManipuladorDeUsuario = RequestHandler<
+  SemParametros,
+  RespostaDeUsuarioAutenticado,
+  unknown
+>;
+
+/**
  * Leitura defensiva do cookie: `req.cookies` e tipado como `any` pelo Express e
  * deixar esse `any` entrar no fluxo apagaria a checagem de tipo do service.
  * Cookie ausente, vazio ou com valor nao textual viram `undefined`, que e
@@ -107,6 +138,16 @@ function responderComSessao(resposta: Response, sessao: AuthenticatedSession): v
  * deixa de ser obvia).
  */
 export interface AuthControllerDependencies {
+  /**
+   * O `GET /me` e o unico handler que fala com um repositorio em vez de um
+   * service, porque nao ha caso de uso a orquestrar: e uma leitura do proprio
+   * usuario, pela chave primaria, sem regra alguma alem de "quem nao existe mais
+   * nao tem sessao". Um service de uma linha em volta disso seria cerimonia, e
+   * criar o arquivo dele sairia da tabela de arquivos da task. A porta e a
+   * interface (`UserRepository`), nao o Prisma: o handler continua sem conhecer
+   * o banco.
+   */
+  readonly users: UserRepository;
   readonly registerUser: RegisterUserService;
   readonly confirmEmail: ConfirmEmailService;
   readonly resendConfirmation: ResendConfirmationService;
@@ -178,6 +219,45 @@ export class AuthController {
   };
 
   /**
+   * Bootstrap da sessao no cliente: com um access token valido, devolve o
+   * usuario corrente. Ambas as roles podem consultar a si mesmas, entao a rota
+   * leva `authenticate` e NAO `authorizeRole`.
+   *
+   * A leitura vai ao banco de proposito, em vez de responder com as claims do
+   * token: nome e e-mail nao estao no JWT (eles ficam fora justamente para nao
+   * viajar em cada requisicao) e a role gravada na tabela e a verdade — um token
+   * assinado antes de uma mudanca de role continua valido por ate 15 minutos.
+   */
+  readonly me: ManipuladorDeUsuario = async (requisicao, resposta) => {
+    const autenticado = requisicao.authUser;
+
+    /**
+     * Estreitamento do opcional, nao paranoia: `req.authUser` e opcional no tipo
+     * porque a maioria das rotas e publica. Se algum dia esta rota for montada
+     * sem o `authenticate`, o desfecho e 401 — nunca `undefined` propagando.
+     */
+    if (autenticado === undefined) {
+      throw new SessionExpiredError();
+    }
+
+    const usuario = await this.services.users.findById(autenticado.id);
+
+    /**
+     * Conta apagada com token ainda dentro da validade: 401, e nao 404. Do ponto
+     * de vista do cliente a sessao acabou, e um 404 o faria tratar como "recurso
+     * inexistente" em vez de mandar o usuario ao login.
+     */
+    if (usuario === null) {
+      throw new SessionExpiredError();
+    }
+
+    resposta.status(HTTP_STATUS.OK).json({
+      ...toAuthenticatedUser(usuario),
+      status: usuario.status,
+    });
+  };
+
+  /**
    * 204 sem corpo, e o cookie e limpo mesmo quando nao havia sessao a encerrar:
    * o resultado observavel do logout precisa ser o mesmo em qualquer estado.
    */
@@ -207,6 +287,7 @@ export function createAuthController(): AuthController {
   );
 
   return new AuthController({
+    users,
     registerUser: new RegisterUserService(users, tokens, confirmationMail, prisma),
     confirmEmail: new ConfirmEmailService(users, tokens, prisma),
     resendConfirmation: new ResendConfirmationService(users, tokens, confirmationMail, prisma),

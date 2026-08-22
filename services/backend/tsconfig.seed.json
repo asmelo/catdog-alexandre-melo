@@ -1,0 +1,17 @@
+{
+  // Verificacao de tipos do que vive FORA de `src/`, hoje o `prisma/seed.ts`.
+  //
+  // Existe como arquivo separado porque o `tsconfig.json` declara
+  // `rootDir: "src"` para que o `dist/` espelhe `src/` sem um nivel extra.
+  // Acrescentar `prisma/**/*.ts` ao `include` de la faz o `tsc` abortar com
+  // TS6059 ("not under rootDir"), e afrouxar o `rootDir` mudaria o layout do
+  // build e quebraria o `start`/`copy:templates`.
+  //
+  // `noEmit` porque aqui so se verificam tipos: o seed roda por `ts-node`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["prisma/**/*.ts", "src/**/*.ts"]
+}

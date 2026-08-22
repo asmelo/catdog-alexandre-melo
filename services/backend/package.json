@@ -13,9 +13,13 @@
     "build": "tsc && tsc-alias && npm run copy:templates",
     "copy:templates": "mkdir -p dist/infra/mail/templates && cp -r src/infra/mail/templates/* dist/infra/mail/templates/",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.seed.json",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -25,6 +29,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^8.6.2",
     "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^9.0.5",
