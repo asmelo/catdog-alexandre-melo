@@ -3,16 +3,16 @@ import { Router } from 'express';
 import { createAuthController } from '~/domains/auth/auth.controller';
 import {
   confirmEmailSchema,
+  loginSchema,
   registerSchema,
   resendConfirmationSchema,
 } from '~/domains/auth/auth.validators';
 import { validateRequest } from '~/middlewares/validate-request.middleware';
 
 /**
- * Rotas de autenticacao, montadas em `/api/auth`. Login, refresh, logout e `me`
- * entram neste mesmo arquivo na TASK-BACKEND-005; o middleware de autenticacao e
- * o rate limit, na TASK-BACKEND-006 — ate lá estas tres rotas sao publicas e sem
- * throttling, por decisao de escopo.
+ * Rotas de autenticacao, montadas em `/api/auth`. O `GET /me`, o middleware de
+ * autenticacao e o rate limit entram na TASK-BACKEND-006 — ate lá estas seis
+ * rotas sao publicas e sem throttling, por decisao de escopo.
  */
 
 const controller = createAuthController();
@@ -41,3 +41,14 @@ authRoutes.post(
   validateRequest({ body: resendConfirmationSchema }),
   controller.resendConfirmation,
 );
+
+authRoutes.post('/login', validateRequest({ body: loginSchema }), controller.login);
+
+/**
+ * Sem `validateRequest`: a credencial destas duas rotas e o cookie, nao o corpo.
+ * Declarar um schema de corpo vazio faria um cliente que enviasse `{}` receber
+ * 400 em vez do 401 generico, criando uma diferenca observavel sem nenhum ganho.
+ */
+authRoutes.post('/refresh', controller.refresh);
+
+authRoutes.post('/logout', controller.logout);

@@ -129,7 +129,21 @@ export const confirmEmailSchema = z.object({ token: tokenSchema });
 
 export const resendConfirmationSchema = z.object({ email: emailSchema });
 
+/**
+ * Login. A senha e validada apenas como "preenchida": o `.min(8)` do cadastro NAO
+ * se aplica aqui. Uma senha de 7 caracteres deve receber "E-mail ou senha
+ * incorretos." como qualquer outra tentativa errada — devolver um erro de
+ * validacao contando o tamanho minimo informaria a quem esta sondando qual e o
+ * formato aceito pelo sistema, e para uma conta antiga com senha mais curta
+ * bloquearia o login em vez de recusar a credencial.
+ */
+export const loginSchema = z.object({
+  email: emailSchema,
+  password: textoObrigatorio().min(1, MESSAGES.FIELD_REQUIRED),
+});
+
 /** Tipos derivam do schema: nenhum DTO duplicando a mesma forma. */
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type ConfirmEmailInput = z.infer<typeof confirmEmailSchema>;
 export type ResendConfirmationInput = z.infer<typeof resendConfirmationSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
