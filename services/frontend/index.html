@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Icone vazio deliberado: sem este `link`, o navegador pede
+         `/favicon.ico` por conta propria e o 404 aparece como ERRO no
+         console. O icone definitivo da marca entra com os assets da
+         identidade visual (TASK-FRONTEND-009). -->
+    <link rel="icon" href="data:," />
+    <!-- Nunito nos 4 pesos usados pelo mockup: 400 corpo, 600 campos e texto
+         auxiliar, 700 link secundario, 800 titulos e botao. Nada alem disso,
+         para nao baixar arquivo de fonte que a interface nunca aplica. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <title>CatDog</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
