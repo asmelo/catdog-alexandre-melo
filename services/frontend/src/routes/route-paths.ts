@@ -20,8 +20,21 @@ export const ROUTE_PATHS = {
   CHECK_EMAIL: '/verifique-seu-email',
   CONFIRM_EMAIL: '/confirmar-email',
   ADMIN_HOME: '/admin',
+  ADMIN_ANIMALS: '/admin/animais',
+  ADMIN_SPECIES: '/admin/especies',
   CLIENT_HOME: '/minha-area',
 } as const;
+
+/**
+ * Destino de `/admin`, que deixou de renderizar pagina propria e passou a
+ * redirecionar para a primeira area administrativa disponivel.
+ *
+ * Aponta para as especies ENQUANTO A FEATURE DE ANIMAIS NAO EXISTIR. A feature
+ * seguinte do modulo muda esta linha — e so ela: `ADMIN_HOME` continua sendo
+ * `/admin` e `homePathForRole('admin')` continua devolvendo `/admin`, porque o
+ * `PublicOnlyRoute`, o `RoleRoute` e a tela de login dependem desse valor.
+ */
+export const ADMIN_DEFAULT_PATH = ROUTE_PATHS.ADMIN_SPECIES;
 
 /**
  * Chaves finitas (nao e assinatura de indice), portanto o acesso abaixo devolve

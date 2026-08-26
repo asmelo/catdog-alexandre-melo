@@ -6,7 +6,7 @@ import { useAuth } from '~/contexts/auth/use-auth';
 import { AdminLayout } from '~/layouts/admin-layout';
 import { AuthLayout } from '~/layouts/auth-layout';
 import { ClientLayout } from '~/layouts/client-layout';
-import { AdminHomePage } from '~/pages/admin/admin-home-page';
+import { SpeciesPage } from '~/pages/admin/species-page';
 import { CheckEmailPage } from '~/pages/auth/check-email-page';
 import { ConfirmEmailPage } from '~/pages/auth/confirm-email-page';
 import { LoginPage } from '~/pages/auth/login-page';
@@ -15,7 +15,7 @@ import { ClientHomePage } from '~/pages/client/client-home-page';
 import { NotFoundPage } from '~/pages/errors/not-found-page';
 import { ProtectedRoute } from '~/routes/protected-route';
 import { PublicOnlyRoute } from '~/routes/public-only-route';
-import { ROUTE_PATHS, homePathForRole } from '~/routes/route-paths';
+import { ADMIN_DEFAULT_PATH, ROUTE_PATHS, homePathForRole } from '~/routes/route-paths';
 import { RoleRoute } from '~/routes/role-route';
 
 /**
@@ -93,7 +93,21 @@ export function AppRoutes(): ReactElement {
 
         <Route element={<RoleRoute allow={ROLES_ADMIN} />}>
           <Route path={ROUTE_PATHS.ADMIN_HOME} element={<AdminLayout />}>
-            <Route index element={<AdminHomePage />} />
+            {/*
+              `/admin` nao renderiza mais pagina propria: ele redireciona para a
+              primeira area administrativa disponivel (`ADMIN_DEFAULT_PATH`).
+
+              O redirecionamento fica DENTRO do `AdminLayout` e do `RoleRoute`, e
+              nao solto: assim o visitante sem sessao e o `cliente` continuam
+              sendo tratados pelas guardas ANTES de qualquer redirecionamento,
+              exatamente como antes.
+
+              `replace` e obrigatorio. Sem ele, o "voltar" do navegador devolve o
+              usuario a `/admin`, que redireciona de novo — um laco do qual ele
+              nao sai.
+            */}
+            <Route index element={<Navigate to={ADMIN_DEFAULT_PATH} replace />} />
+            <Route path="especies" element={<SpeciesPage />} />
           </Route>
           <Route path={`${ROUTE_PATHS.ADMIN_HOME}/*`} element={<NotFoundPage />} />
         </Route>

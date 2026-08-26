@@ -67,16 +67,20 @@ const EM_BOOTSTRAP: EstadoDublado = { status: 'bootstrapping', user: null };
 const MARCADOR_DE_ADMIN = 'Administrador';
 
 describe('AppRoutes — area administrativa', () => {
-  it('CT-09: admin autenticado em /admin ve o painel dentro do layout administrativo', () => {
+  it('CT-09: admin autenticado em /admin cai na primeira area administrativa, dentro do layout', () => {
     renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_HOME);
 
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_HOME);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Painel administrativo');
+    // `/admin` nao renderiza mais pagina propria (TASK-FRONTEND-007): ele
+    // redireciona para `ADMIN_DEFAULT_PATH`. O destino do pos-login continua
+    // sendo `/admin` — `homePathForRole` nao mudou —, e o que este teste observa
+    // e que ele termina numa tela real, e nao em branco nem na 404.
+    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Espécies');
     expect(screen.getByText(MARCADOR_DE_ADMIN)).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Navegação administrativa' })).toBeInTheDocument();
     // O nome prova que a sessao exibida e a do usuario que autenticou, e nao uma
     // pagina estatica igual para qualquer um.
-    expect(screen.getByText(`Você está autenticado como administrador, ${USUARIO_ADMIN.name}.`)).toBeInTheDocument();
+    expect(screen.getByText(USUARIO_ADMIN.name)).toBeInTheDocument();
   });
 
   it('o item ativo da navegacao administrativa e anunciado por aria-current', () => {
@@ -85,7 +89,7 @@ describe('AppRoutes — area administrativa', () => {
     // `NavLink` marca `aria-current="page"` sozinho: a indicacao de "onde estou"
     // chega ao leitor de tela sem nenhum atributo escrito a mao, e o sublinhado e
     // apenas o reforco visual dela.
-    expect(screen.getByRole('link', { name: 'Painel' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Espécies' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('o botao Sair do layout administrativo chama logout', async () => {
@@ -138,7 +142,7 @@ describe('AppRoutes — area do cliente', () => {
      */
     expect(screen.queryByText(MARCADOR_DE_ADMIN)).toBeNull();
     expect(screen.queryByRole('navigation', { name: 'Navegação administrativa' })).toBeNull();
-    expect(screen.queryByRole('link', { name: 'Painel' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Espécies' })).toBeNull();
 
     for (const link of screen.getAllByRole('link')) {
       expect(link.getAttribute('href')).not.toContain(ROUTE_PATHS.ADMIN_HOME);
@@ -149,15 +153,17 @@ describe('AppRoutes — area do cliente', () => {
     renderizar(AUTENTICADO_CLIENTE, ROUTE_PATHS.ADMIN_HOME);
 
     expect(rotaAtual()).toBe(ROUTE_PATHS.CLIENT_HOME);
-    expect(screen.queryByText('Painel administrativo')).toBeNull();
+    expect(screen.queryByText('Espécies')).toBeNull();
     expect(screen.queryByText(MARCADOR_DE_ADMIN)).toBeNull();
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Minha área');
   });
 
-  it('admin que abre /minha-area e devolvido ao painel: a guarda vale nos dois sentidos', () => {
+  it('admin que abre /minha-area e devolvido a area administrativa: a guarda vale nos dois sentidos', () => {
     renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.CLIENT_HOME);
 
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_HOME);
+    // A guarda devolve a `homePathForRole('admin')`, que continua sendo `/admin`;
+    // e `/admin` que redireciona dali para a primeira area administrativa.
+    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
   });
 
   it('o botao Sair do layout de cliente chama logout', async () => {
@@ -174,17 +180,16 @@ describe('Layouts — indicacao de item ativo', () => {
   /**
    * Os layouts sao montados DIRETAMENTE aqui, fora do mapa de rotas.
    *
-   * E a unica forma de observar o item de navegacao INATIVO: no mapa atual cada
-   * layout tem uma unica rota filha, que e sempre a do proprio item, e portanto o
-   * `NavLink` esta sempre ativo. O estado inativo passa a existir quando a area
-   * ganhar uma segunda tela, e o teste ja cobre esse caminho hoje.
+   * E a forma de observar o item de navegacao INATIVO numa rota que o mapa nao
+   * possui: montado numa rota arbitraria da area, nenhum dos `NavLink` casa, e o
+   * `aria-current` precisa estar ausente.
    */
   it('o item de navegacao administrativo fica sem aria-current fora da propria rota', () => {
     const sessao = criarSessao(AUTENTICADO_ADMIN);
 
     renderizarComSessao(<AdminLayout />, { sessao: sessao.valor, rota: '/admin/outra-tela' });
 
-    expect(screen.getByRole('link', { name: 'Painel' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Espécies' })).not.toHaveAttribute('aria-current');
   });
 
   it('o item de navegacao do cliente fica sem aria-current fora da propria rota', () => {
@@ -227,7 +232,7 @@ describe('AppRoutes — rotas publicas e exclusivas de visitante', () => {
   it('autenticado em /cadastro tambem e redirecionado', () => {
     renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.REGISTER);
 
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_HOME);
+    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
   });
 
   it('visitante em /cadastro ve o formulario dentro do layout de autenticacao', () => {
@@ -261,9 +266,9 @@ describe('AppRoutes — rotas publicas e exclusivas de visitante', () => {
 });
 
 describe('AppRoutes — raiz, splash e rota inexistente', () => {
-  it('a raiz manda o admin ao painel e o cliente a propria area', () => {
+  it('a raiz manda o admin a area administrativa e o cliente a propria area', () => {
     renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ROOT);
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_HOME);
+    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
   });
 
   it('a raiz manda o cliente a area do cliente', () => {
@@ -291,7 +296,7 @@ describe('AppRoutes — raiz, splash e rota inexistente', () => {
     // A regressao que desloga o usuario a cada F5.
     expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_HOME);
     expect(screen.getByRole('status')).toHaveTextContent('Carregando sua sessão...');
-    expect(screen.queryByText('Painel administrativo')).toBeNull();
+    expect(screen.queryByText('Espécies')).toBeNull();
   });
 
   it('bootstrapping em /login mostra o splash e NAO renderiza o formulario', () => {

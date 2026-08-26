@@ -26,7 +26,8 @@
 | 003 backend species rename | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 15 suítes / 138 testes | `ba5ae3c` |
 | 004 backend species delete + guarda de uso | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `1207ece` |
 | 005 backend suíte de testes | **concluída** — 3 rodadas de revisão (2 reprovações), aprovada na 3ª | typecheck exit 0; **20 suítes / 270 testes**; cobertura **99.58 / 95.45 / 100 / 99.58**, domínio species em 100/100/100/100 | `76ea63d` |
-| 006 frontend primitivas de UI | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes (baseline do frontend, intacta) | ver `git log` |
+| 006 frontend primitivas de UI | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes (baseline do frontend, intacta) | `148aa31` |
+| 007 frontend sidebar e rotas admin | **concluída** — aprovada na rodada 1; correção visual + rodada 2 | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -134,8 +135,32 @@ Divergência de cor aceita: a task pede `brand-orange` no botão de confirmar, m
 usado `brand-orange-dark` (**4.845:1**), token que já existia. O hover foi para `border-ink`, porque devolver o
 laranja claro desfazia a correção.
 
+**TASK-FRONTEND-007** — sidebar administrativa com "Animais" e "Espécies", `/admin` redirecionando para
+`/admin/especies`, casca de `species-page.tsx`, e `admin-home-page.tsx` aposentada. Editou também
+`app-routes.spec.tsx`, que **não está na tabela de arquivos da task** — a revisão auditou asserção por asserção
+e confirmou que nenhum teste perdeu poder (29 `it`, 53 `expect`, antes e depois); quatro asserções que estavam
+**vacuamente verdadeiras** tiveram o poder restaurado.
+
+**Contradição interna da task, decidida pelo orquestrador:** a L13 declara a captura de tela fonte da verdade do
+layout, mas a L49 descrevia o interior do `<aside>` pressupondo **fundo roxo**. Abri a captura: a barra é **branca**,
+com o item ativo numa pílula roxa e o logo sobre branco sem placa. **A captura venceu** — a L13 é mais específica e
+mais autoritativa sobre layout. A barra foi realinhada e o texto da task, emendado. Caíram junto a placa branca do
+logo e a exceção do anel de foco branco, que só existiam por causa do fundo roxo. Se a barra roxa for a preferência
+real do produto, é reversível.
+
 ## Achados a repassar para tasks futuras
 
+- **TASK-FRONTEND-011 — não asserte classes de cor.** O par ativo/inativo da sidebar ainda está em movimento
+  (ícones, fundo do `<main>`, peso do fio). Um `expect` sobre `bg-brand-purple` transformaria a próxima decisão de
+  produto em teste vermelho. Asserte `aria-current` e `href`, que são contrato.
+- **TASK-FRONTEND-009 — o fundo do `<main>`** está em `surface-canvas` (`#dde0ea`) enquanto a captura mostra
+  `#fafafc`. Mudá-lo obriga a incluir `tailwind.config.js` na tabela de arquivos, porque o token é compartilhado com
+  o `ClientLayout`. Decisão da 009.
+- **TASK-FRONTEND-009 — a sidebar está sem ícones de propósito**, não por esquecimento: `icons.tsx` só tem
+  `PencilIcon` e `TrashIcon`, e a captura mostra pegada e etiqueta. Criar os ícones é task própria sobre a primitiva.
+- **Imprecisão conhecida, não corrigida:** o comentário de `admin-layout.tsx` (~L56) diz que `ink` sobre
+  `brand-purple` rende `2.78:1`; o valor real é `2.93:1`. O número é pré-existente (vinha do `HEAD`) e foi carregado
+  adiante. A conclusão não muda — 2.93:1 também reprova o AA. Corrigir quando alguém abrir o arquivo por motivo próprio.
 - **TASK-FRONTEND-011 — o jsdom não reproduz o blur automático de elemento desabilitado.** Um teste que só faça
   `rerender` para `isSubmitting` **passa mesmo com a falha de armadilha de foco presente** — o `blur()` explícito
   precisa estar dentro do mesmo `act()` do rerender. E `fireEvent.keyDown` não move foco nenhum: todo caso de
