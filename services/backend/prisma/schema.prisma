@@ -96,3 +96,35 @@ model RefreshToken {
   @@index([userId])
   @@map("refresh_tokens")
 }
+
+/// Espécie do pet, mantida pelo administrador em lista controlada.
+/// FEATURE-001 do MODULE-002 — Catálogo de pets.
+model Species {
+  id             String   @id @default(uuid()) @db.Uuid
+  /// Nome como o administrador digitou, já normalizado quanto a espaços (RN-03).
+  /// É este valor que a API expõe e a interface exibe.
+  name           String   @db.VarChar(60)
+  /// Chave de unicidade da RN-04: `name` em minúsculas, com espaços já
+  /// colapsados. Coluna persistida e não índice funcional, porque o Prisma não
+  /// declara índice sobre expressão no schema — deixar a regra fora do schema a
+  /// tornaria invisível para quem lê o modelo.
+  /// Acentos são PRESERVADOS aqui: "réptil" e "reptil" são chaves distintas (RN-05).
+  /// NÃO é exposta pela API.
+  /// Desvio deliberado do bloco literal da spec: ela declara também um
+  /// `@@index([nameNormalized])` para a ordenação alfabética da RN-11, mas em
+  /// Postgres o índice B-tree criado pelo `@unique` já atende essa ordenação.
+  /// Dois índices sobre a mesma coluna custam escrita e não rendem leitura —
+  /// por isso apenas o `@unique` é mantido aqui.
+  nameNormalized String   @unique @map("name_normalized") @db.VarChar(60)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  /// Preenchido pela feature seguinte do módulo. É esta relação que a RN-08
+  /// protege: a exclusão de uma espécie com animais vinculados é recusada.
+  /// Ao descomentá-la, o lado inverso em `Animal` DEVE ser declarado com
+  /// `onDelete: Restrict` — `Cascade` apagaria animais em silêncio e `SetNull`
+  /// produziria animal sem espécie; os dois desfechos são proibidos (RN-09).
+  // animals Animal[]
+
+  @@map("species")
+}
