@@ -84,13 +84,19 @@ a AC #10 da TASK-BACKEND-003 seguem não homologadas.
 Recomendado também criar `MAIL_SUPPORT_ADDRESS`: hoje o `supportEmail` do template
 reaproveita `MAIL_FROM_ADDRESS` por falta de variável própria (DECISÃO-018).
 
-### 5. Administrador não existe no banco
+### 5. Administrador não existe no banco — RESOLVIDO em 2026-08-24
 
-O seed foi validado e o usuário de teste removido. Para provisionar:
+`SEED_ADMIN_EMAIL=admin@catdog.com` e `SEED_ADMIN_PASSWORD` foram gravadas em
+`services/backend/.env` (não versionado) e o seed rodou contra o Supabase: existe hoje
+exatamente um `role=ADMIN`, `status=ACTIVE`, `id=f096917d-68d7-47c4-aa92-854b47688962`.
+
+A causa da pendência era só a ausência das duas variáveis — `credenciaisDoAdmin()` aborta
+antes de qualquer escrita quando elas faltam. Para reprovisionar (o `upsert` é idempotente
+e reafirma senha, role e status, servindo para recuperar acesso perdido):
 
 ```bash
 cd services/backend && nvm use 20
-SEED_ADMIN_EMAIL=... SEED_ADMIN_PASSWORD=... npm run db:seed
+npm run db:seed
 ```
 
 ### 6. Fila de refresh é por aba
