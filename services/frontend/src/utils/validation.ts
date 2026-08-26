@@ -1,7 +1,7 @@
 import { MESSAGES } from '~/utils/messages';
 
 /**
- * Validacao de formulario do fluxo de autenticacao — funcoes PURAS, sem React.
+ * Validacao de formulario — funcoes PURAS, sem React.
  *
  * Sem hook, sem estado e sem import de componente de proposito: e o que permite
  * exercitar cada regra chamando uma funcao (TASK-FRONTEND-013) em vez de montar
@@ -26,6 +26,35 @@ export type FieldErrors = Readonly<Record<string, string>>;
 
 /** RN-04. O mesmo numero do `passwordSchema` do backend. */
 const TAMANHO_MINIMO_DA_SENHA = 8;
+
+/** RN-02 do MODULE-002. Contado sobre o nome JA normalizado pela RN-03. */
+const TAMANHO_MINIMO_DO_NOME_DE_ESPECIE = 2;
+
+/**
+ * RN-02 do MODULE-002 e, no backend, tambem o limite fisico das colunas `name` e
+ * `name_normalized` (`VARCHAR(60)`).
+ */
+const TAMANHO_MAXIMO_DO_NOME_DE_ESPECIE = 60;
+
+/**
+ * Colapso de espacos da RN-03. `\s+` e nao `' +'`: o campo aceita colagem de
+ * texto, e tabulacao e quebra de linha precisam virar um unico espaco como
+ * qualquer outro branco. Mesmo padrao do `species-name.ts` do backend.
+ */
+const SEQUENCIA_DE_ESPACOS = /\s+/g;
+
+/**
+ * Os MESMOS code points que o `higienizar` da borda HTTP do backend remove
+ * (`species.validators.ts`): espaco de largura zero e seus vizinhos
+ * (U+200B a U+200F, que incluem os marcadores de direcao de texto), hifen suave
+ * (U+00AD), colador de palavras (U+2060) e BOM (U+FEFF).
+ *
+ * Copiado literalmente, e nao "aproximado": qualquer code point a mais ou a
+ * menos aqui devolve a divergencia de contagem que esta constante existe para
+ * fechar. O servidor continua sendo a autoridade — remover aqui nao muda o que e
+ * ENVIADO, so o que e MEDIDO antes de enviar.
+ */
+const CARACTERES_INVISIVEIS = /[\u00AD\u200B-\u200F\u2060\uFEFF]/g;
 
 /**
  * Formato de e-mail deliberadamente FROUXO: um caractere que nao seja espaço nem
@@ -116,6 +145,103 @@ function erroDeConfirmacaoDeSenha(senha: string, confirmacao: string): string | 
   return senha === confirmacao ? undefined : MESSAGES.VALIDATION.PASSWORDS_DO_NOT_MATCH;
 }
 
+/**
+ * RN-03 — remove os espacos das extremidades e colapsa sequencias de espacos
+ * internos em um unico espaco. `"  Cão   Pastor "` vira `"Cão Pastor"`, com dez
+ * caracteres para efeito de contagem (CT-10 / CA-07).
+ *
+ * PRESERVA caixa e acentos: o nome e exibido como o administrador digitou.
+ *
+ * Esta copia ESPELHA a regra do servidor e nao a substitui. Ela e o SEGUNDO dos
+ * dois passos que fazem a contagem local bater com a do backend ANTES da
+ * requisicao — sem ela, `"  Ov  "` seria medido com seis caracteres aqui e com
+ * dois la, e a tela recusaria um nome que o servidor aceitaria. Sozinha ela NAO
+ * basta para contar: o primeiro passo, a remocao dos invisiveis, esta em
+ * `higienizarNomeDeEspecie`, e e aquela funcao — nao esta — que quem for medir
+ * caracteres deve chamar.
+ *
+ * O texto ENVIADO continua sendo o que o usuario digitou, e e o backend que grava
+ * a forma normalizada: normalizar antes de enviar deslocaria a autoridade sobre a
+ * RN-03 para o cliente, onde ela nao pode ser garantida.
+ *
+ * E EXATAMENTE DUAS OPERACOES, como o `normalizeSpeciesName` do
+ * `species-name.ts` do backend — este e o contrato literal da RN-03, e nada
+ * alem dele entra aqui. A higienizacao dos caracteres invisiveis, que a spec nao
+ * preve, fica em `higienizarNomeDeEspecie` e roda ANTES desta funcao, no mesmo
+ * arranjo de duas camadas que o backend usa entre `species-name.ts` e
+ * `species.validators.ts`. Quem precisa da contagem que o servidor fara deve
+ * chamar aquela, e nao esta.
+ */
+export function normalizeSpeciesName(bruto: string): string {
+  return bruto.trim().replace(SEQUENCIA_DE_ESPACOS, ' ');
+}
+
+/**
+ * A BORDA: remove os caracteres invisiveis e so entao normaliza — a mesma ordem
+ * do `higienizar` do backend (`species.validators.ts`). E este valor, e nao o da
+ * funcao acima, que `erroDeNomeDeEspecie` mede.
+ *
+ * A ORDEM E O PONTO, nao um detalhe de estilo. O `\s` do JavaScript casa
+ * `U+FEFF`: normalizar primeiro converteria o BOM em ESPACO em vez de remove-lo,
+ * e um nome de sessenta caracteres alternando letra e BOM sairia com noventa
+ * aqui contra sessenta no servidor. Os demais code points nao sao branco nenhum,
+ * sobrevivem intactos ao colapso e cada um soma 1 a um total que o servidor nao
+ * conta.
+ *
+ * Sem esta funcao a divergencia corre na direcao proibida — recusar no cliente o
+ * que o servidor aceita —, que o comentario de `FORMATO_DE_EMAIL` acima ja
+ * declara ser o pior defeito possivel nesta camada. Aqui seria pior ainda: o
+ * caractere e invisivel, entao o usuario ve um nome dentro do limite ser
+ * recusado por tamanho e nao tem o que apagar.
+ */
+function higienizarNomeDeEspecie(bruto: string): string {
+  return normalizeSpeciesName(bruto.replace(CARACTERES_INVISIVEIS, ''));
+}
+
+/**
+ * Precedencia IDENTICA a do `speciesNameSchema` do backend, e com `return`
+ * explicito entre os degraus: um nome em branco recebe "Este campo é
+ * obrigatório." e nao "no mínimo 2 caracteres.", porque o problema que o usuario
+ * precisa resolver primeiro e o de preencher. As duas camadas so produzem a
+ * mesma mensagem para a mesma entrada se a ordem for a mesma.
+ *
+ * A medicao acontece sobre o valor JA higienizado e normalizado, e nao sobre o
+ * texto cru — `"   "` chega aqui como `""` e cai no degrau da obrigatoriedade
+ * (CT-03).
+ *
+ * DIVERGENCIA QUE PERMANECE — UMA SO, e deliberada: o backend mede tambem o
+ * comprimento da CHAVE de unicidade (`speciesNameKey`, `species.validators.ts`),
+ * porque `toLowerCase()` pode AUMENTAR a string — `İ` (U+0130) vira dois code
+ * units, e sessenta deles cabem em `name` mas estouram os sessenta de
+ * `name_normalized`. Reproduzir isso aqui traria para dentro da tela uma regra
+ * de PERSISTENCIA do servidor, sobre uma coluna que o cliente nao conhece.
+ *
+ * Ela corre na direcao SEGURA: deixa passar um nome que o servidor recusa, e o
+ * caso volta como `VALIDATION_ERROR` com exatamente a mensagem que esta funcao
+ * emitiria — custa uma viagem de rede e nada mais. A direcao oposta, recusar
+ * aqui o que o servidor aceita, e a que nao pode existir; e por isso que a
+ * higienizacao dos invisiveis E replicada, em `higienizarNomeDeEspecie`.
+ *
+ * Fora essa medicao da chave, os dois lados produzem a mesma mensagem para a
+ * mesma entrada: mesma higienizacao, mesma normalizacao, mesma ordem entre as
+ * duas, mesmos limites e mesma precedencia entre os tres degraus.
+ */
+function erroDeNomeDeEspecie(bruto: string): string | undefined {
+  const nome = higienizarNomeDeEspecie(bruto);
+
+  if (nome === '') {
+    return MESSAGES.VALIDATION.FIELD_REQUIRED;
+  }
+
+  if (nome.length < TAMANHO_MINIMO_DO_NOME_DE_ESPECIE) {
+    return MESSAGES.VALIDATION.NAME_TOO_SHORT;
+  }
+
+  return nome.length > TAMANHO_MAXIMO_DO_NOME_DE_ESPECIE
+    ? MESSAGES.VALIDATION.NAME_TOO_LONG
+    : undefined;
+}
+
 export interface LoginFormValues {
   readonly email: string;
   readonly password: string;
@@ -182,6 +308,37 @@ export function validateRegisterForm(values: RegisterFormValues): FieldErrors {
  */
 export function validateEmailOnlyForm(email: string): FieldErrors {
   return erroDoCampo('email', erroDeEmail(email));
+}
+
+/**
+ * Valores do formulario de nome de especie — um objeto de um campo so, e nao a
+ * string crua.
+ *
+ * A forma existe para casar com a chave do mapa devolvido: o erro sai como
+ * `{ name: ... }`, que e exatamente o `field` que o `details` do
+ * `VALIDATION_ERROR` do backend usa. Com as duas origens produzindo a mesma
+ * chave, a tela tem UM caminho de exibicao de erro de campo.
+ */
+export interface SpeciesNameFormValues {
+  readonly name: string;
+}
+
+/**
+ * Valida o nome da especie — a MESMA funcao para a criacao e para a edicao em
+ * linha.
+ *
+ * Uma so, e nao uma por tela: as duas operacoes tem contrato de validacao
+ * identico (o `PATCH` do backend reusa o `speciesNameSchema` do `POST` pelo
+ * mesmo motivo), e uma segunda copia divergiria da primeira na primeira revisao
+ * de limite.
+ *
+ * ESTA CAMADA NAO E A AUTORIDADE. Ela nao verifica unicidade — a RN-04 depende
+ * do que ja esta gravado e so o servidor sabe — nem substitui a validacao do
+ * `speciesNameSchema`. O que ela entrega e resposta imediata e, nos casos CT-03,
+ * CT-04 e CT-07, a AUSENCIA de requisicao.
+ */
+export function validateSpeciesNameForm(values: SpeciesNameFormValues): FieldErrors {
+  return erroDoCampo('name', erroDeNomeDeEspecie(values.name));
 }
 
 /** Acucar de leitura para `Object.keys(erros).length > 0` nos pontos de submissao. */

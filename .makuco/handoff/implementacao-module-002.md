@@ -27,7 +27,8 @@
 | 004 backend species delete + guarda de uso | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `1207ece` |
 | 005 backend suíte de testes | **concluída** — 3 rodadas de revisão (2 reprovações), aprovada na 3ª | typecheck exit 0; **20 suítes / 270 testes**; cobertura **99.58 / 95.45 / 100 / 99.58**, domínio species em 100/100/100/100 | `76ea63d` |
 | 006 frontend primitivas de UI | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes (baseline do frontend, intacta) | `148aa31` |
-| 007 frontend sidebar e rotas admin | **concluída** — aprovada na rodada 1; correção visual + rodada 2 | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
+| 007 frontend sidebar e rotas admin | **concluída** — aprovada na rodada 1; correção visual + rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `c1a17c6` |
+| 008 frontend camada de API e validação | **concluída** — aprovada na rodada 1 (2 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -148,8 +149,37 @@ mais autoritativa sobre layout. A barra foi realinhada e o texto da task, emenda
 logo e a exceção do anel de foco branco, que só existiam por causa do fundo roxo. Se a barra roxa for a preferência
 real do produto, é reversível.
 
+**TASK-FRONTEND-008** — `services/api/species-api.ts` (as quatro funções sobre `request`), validação de formulário
+em `utils/validation.ts` e o bloco `SPECIES` em `utils/messages.ts`. Removeu de passagem o `MESSAGES.ADMIN_HOME`
+órfão, que a TASK-FRONTEND-007 tinha deixado ao aposentar a página de painel — **pendência da 007 encerrada aqui**.
+
+`listSpecies` devolve o envelope `{ items }` **inteiro**, não o array: desembrulhar casaria o formato do `GET` com o
+do `POST` por conveniência e obrigaria a mudar todos os chamadores quando o envelope ganhar o primeiro metadado,
+que é a razão declarada de ele existir. A 009 já esperava isso.
+
+**Corrigido na rodada 2 — divergência não declarada, na direção ruim:** a validação local não higienizava
+caracteres invisíveis antes de normalizar, então **recusava no cliente nomes que o servidor aceita**. O caso pior:
+`\s` do JavaScript **casa** `U+FEFF`, então a normalização o convertia em espaço em vez de removê-lo, e um nome de
+60 caracteres era medido como 90. Replicado o arranjo de duas camadas do backend (`higienizar` → `normalizar`).
+A revisão refez a comparação por exaustão — **709.483 entradas**, incluindo varredura completa do BMP — e achou
+**uma única divergência**, a declarada e deliberada: a medição de `speciesNameKey` (caso `U+0130`), que corre na
+direção segura (servidor mais estrito, mesma mensagem de volta, custo de uma viagem de rede).
+
 ## Achados a repassar para tasks futuras
 
+- **TASK-FRONTEND-011 — teste de contrato de fonte para os caracteres invisíveis.** A regra de higienização existe
+  agora **duas vezes** (backend e frontend) e nada no build cruza os dois arquivos. Fixar um caso de fronteira
+  (`"A"×60 + U+200B`) **não basta**: o modo de deriva provável é o servidor **acrescentar** um code point, e aí o
+  teste segue verde enquanto a divergência volta calada, na direção proibida. O tratamento devido é ler
+  `services/backend/src/domains/species/species.validators.ts` e **comparar o literal da regex** com o do frontend —
+  falha quando qualquer um dos dois lados muda. Módulo compartilhado foi descartado com razão: não há workspace na
+  raiz, e exigiria um terceiro pacote para eliminar três linhas.
+- **TASK-FRONTEND-009/010 — para contar caracteres use `higienizarNomeDeEspecie`, nunca `normalizeSpeciesName`.**
+  A segunda é a RN-03 pura e **não** higieniza invisíveis; usá-la num contador `n/60` sob o campo reintroduz a
+  divergência que a rodada 2 fechou.
+- **TASK-FRONTEND-010 — fixe a forma do rótulo acessível.** A 008 assume que o `IconButton` compõe
+  `${EDIT_ACTION} ${nome}` (verbo solto + nome) para satisfazer o RNF-07. É contrato **implícito**: se a 010 montar
+  de outro jeito, o requisito quebra sem nada reprovar.
 - **TASK-FRONTEND-011 — não asserte classes de cor.** O par ativo/inativo da sidebar ainda está em movimento
   (ícones, fundo do `<main>`, peso do fio). Um `expect` sobre `bg-brand-purple` transformaria a próxima decisão de
   produto em teste vermelho. Asserte `aria-current` e `href`, que são contrato.
