@@ -22,7 +22,8 @@
 | Task | Status | Testes | Commit |
 |---|---|---|---|
 | 001 backend species model/migration | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `a605360` |
-| 002 backend species list/create | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | ver `git log` |
+| 002 backend species list/create | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `a410112` |
+| 003 backend species rename | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 15 suítes / 138 testes | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -41,6 +42,25 @@ o registro de `/species` em `src/routes/index.ts`. Quatro desvios declarados, os
 `.passthrough()` + `superRefine` no lugar de `.strict()` (é o padrão real do `auth.validators.ts`, e o `.strict()`
 produziria `field: ""`, quebrando o CT-33); higienização de caracteres invisíveis no validador; medição de
 `speciesNameKey(nome)` contra o limite de 60; `withTransaction` sem consumidor (exigido pela própria task).
+
+**TASK-BACKEND-003** — entregou `PATCH /api/species/:id` (validadores, `rename` no repositório, `rename-species.service.ts`,
+controller e rota). **Reprovada na rodada 1**: ao extrair a fábrica `objetoSemCamposExtras`, o agente usou `chave in forma`,
+que consulta a cadeia de protótipos — `toString`, `constructor`, `valueOf`, `hasOwnProperty` e `isPrototypeOf` passavam pela
+guarda de chave extra, quebrando a RN-13 desta task e **regredindo o CT-33 já aprovado na 002**. Corrigido para
+`Object.hasOwn(forma, chave)` e reconferido por execução nos dois schemas. Rodada 2 aprovou.
+
+## Dívida encontrada fora do escopo — registrar em `technical-debt.md` quando a TASK-010 da feature de animais criar o arquivo
+
+- **`src/domains/auth/auth.validators.ts`, fábrica `objetoSemCamposExtras`**: usa `chave in forma`, que consulta a
+  cadeia de protótipos. Chaves como `toString`, `constructor`, `valueOf`, `hasOwnProperty` e `isPrototypeOf` passam
+  pela guarda de "campo não permitido" no domínio `auth`. Correção é uma palavra (`Object.hasOwn(forma, chave)`),
+  mas o domínio `auth` está fora do escopo das tasks do MODULE-002. Descoberto na revisão da TASK-BACKEND-003, que
+  encontrou o mesmo furo introduzido em `species` (lá foi corrigido).
+
+- **`__proto__` como chave de corpo** (`{"name":"Gato","__proto__":"x"}`) responde 201/200 em vez de 400: o `superRefine` roda
+  sobre a saída do `.passthrough()` e o Zod monta o objeto por atribuição, então `__proto__` some antes do laço. **Não é
+  regressão** — o bloco inline da TASK-BACKEND-002 tinha o mesmo desfecho, e a poluição de protótipo foi testada e não ocorre
+  (`Object.prototype` permanece limpo). Desvio da letra da RN-13 sem impacto observável. Tratar junto com a dívida do `auth`.
 
 ## Achados a repassar para tasks futuras
 

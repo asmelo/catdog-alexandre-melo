@@ -105,8 +105,7 @@ const speciesNameSchema = z
   .superRefine(medirNome);
 
 /**
- * Corpo do `POST /api/species` — RECUSA qualquer chave alem de `name` (RN-13 /
- * CT-33).
+ * Objeto que RECUSA qualquer chave nao declarada (RN-13 / CT-33).
  *
  * Nao usa `.strict()`, pela mesma razao ja registrada em `auth.validators.ts`: o
  * `unrecognized_keys` do Zod sai com `path: []`, o `validationErrorFromZodError`
@@ -116,31 +115,77 @@ const speciesNameSchema = z
  * o `superRefine` emite UM problema por chave, com `path` preenchido. Nada e
  * afrouxado: qualquer chave extra continua reprovando a requisicao.
  *
+ * Fabrica e nao um bloco repetido em cada schema: o `POST` e o `PATCH` exigem a
+ * MESMA recusa, e a segunda copia do bloco divergiria na primeira revisao. O
+ * dominio auth tem a sua propria fabrica equivalente, com as mensagens-guarda
+ * daquele contrato — as duas nao sao unificadas porque o texto de cada catalogo
+ * de mensagens e contrato literal do respectivo conjunto de criterios de aceite.
+ *
  * `required_error`/`invalid_type_error` do objeto cobrem o corpo que nem objeto
  * e (um array, unico caso que o `express.json` deixa passar): sem eles a
  * mensagem seria o "Expected object, received array" do Zod, em ingles.
  */
-export const createSpeciesSchema = z
-  .object(
-    { name: speciesNameSchema },
-    {
+function objetoSemCamposExtras<Forma extends z.ZodRawShape>(forma: Forma) {
+  return z
+    .object(forma, {
       required_error: MESSAGES.NAME_REQUIRED,
       invalid_type_error: MESSAGES.NAME_REQUIRED,
-    },
-  )
-  .passthrough()
-  .superRefine((valor, contexto) => {
-    for (const chave of Object.keys(valor)) {
-      if (chave !== 'name') {
-        contexto.addIssue({
-          code: z.ZodIssueCode.unrecognized_keys,
-          keys: [chave],
-          path: [chave],
-          message: MESSAGES.FIELD_NOT_ALLOWED,
-        });
+    })
+    .passthrough()
+    .superRefine((valor, contexto) => {
+      for (const chave of Object.keys(valor)) {
+        if (!Object.hasOwn(forma, chave)) {
+          contexto.addIssue({
+            code: z.ZodIssueCode.unrecognized_keys,
+            keys: [chave],
+            path: [chave],
+            message: MESSAGES.FIELD_NOT_ALLOWED,
+          });
+        }
       }
-    }
-  });
+    });
+}
 
-/** Tipo derivado do schema: nenhum DTO duplicando a mesma forma. */
+/** Corpo do `POST /api/species`. */
+export const createSpeciesSchema = objetoSemCamposExtras({ name: speciesNameSchema });
+
+/**
+ * Corpo do `PATCH /api/species/:id` — reusa o MESMO `speciesNameSchema` da
+ * criacao. O contrato da spec exige para a renomeacao "as mesmas mensagens por
+ * campo do `POST`", entao os limites da RN-02 e a precedencia entre as mensagens
+ * nao podem ser reescritos aqui: qualquer segunda declaracao das regras de
+ * tamanho passaria a divergir do `POST` na primeira alteracao.
+ *
+ * `name` e o unico campo aceito (RN-13): a especie tem exatamente um atributo de
+ * negocio e nem mesmo `id` pode chegar pelo corpo — ele e imutavel (RN-15) e vem
+ * do caminho.
+ */
+export const renameSpeciesSchema = objetoSemCamposExtras({ name: speciesNameSchema });
+
+/**
+ * Parametro de caminho `:id` das rotas de recurso individual.
+ *
+ * Validado como `params` no `validateRequest`, e nao dentro do corpo, porque e o
+ * `issue.path` que vira o `field` do `details`: com o schema montado sobre a
+ * secao de parametros, o problema sai como
+ * `details: [{ field: "id", message: "Identificador invalido." }]`, exigido pelo
+ * contrato (CT-34).
+ *
+ * Existe para que um identificador malformado responda `400` e nao `404`: sem
+ * ele, `"abc"` chegaria ao repositorio e o Prisma recusaria o `WHERE` sobre uma
+ * coluna `uuid` com erro de infraestrutura, produzindo `500` — ou, na melhor
+ * hipotese, um `404` que descreveria mal o problema.
+ */
+export const speciesIdParamSchema = z.object({
+  id: z
+    .string({
+      required_error: MESSAGES.INVALID_ID,
+      invalid_type_error: MESSAGES.INVALID_ID,
+    })
+    .uuid(MESSAGES.INVALID_ID),
+});
+
+/** Tipos derivados dos schemas: nenhum DTO duplicando a mesma forma. */
 export type CreateSpeciesBody = z.infer<typeof createSpeciesSchema>;
+export type RenameSpeciesBody = z.infer<typeof renameSpeciesSchema>;
+export type SpeciesIdParams = z.infer<typeof speciesIdParamSchema>;

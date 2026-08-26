@@ -1,7 +1,11 @@
 import { Router } from 'express';
 
 import { createSpeciesController } from '~/domains/species/species.controller';
-import { createSpeciesSchema } from '~/domains/species/species.validators';
+import {
+  createSpeciesSchema,
+  renameSpeciesSchema,
+  speciesIdParamSchema,
+} from '~/domains/species/species.validators';
 import { authenticate } from '~/middlewares/authenticate.middleware';
 import { authorizeRole } from '~/middlewares/authorize-role.middleware';
 import { validateRequest } from '~/middlewares/validate-request.middleware';
@@ -47,4 +51,22 @@ speciesRoutes.post(
   authorizeRole('admin'),
   validateRequest({ body: createSpeciesSchema }),
   controller.create,
+);
+
+/**
+ * HU-04. `PATCH` e nao `PUT` (Decisao 3 do changelog): o nome e o unico atributo
+ * mutavel do recurso, o que caracteriza alteracao parcial, e o `src/config/cors.ts`
+ * em vigor nao libera `PUT` — adota-lo exigiria reabrir uma decisao transversal
+ * fora do escopo desta feature. Nenhuma rota `PUT` e declarada aqui.
+ *
+ * O `params` entra no `validateRequest` junto com o `body`: e o que faz um
+ * identificador malformado sair como `400` apontando `field: "id"` em vez de
+ * chegar ao repositorio (CT-34).
+ */
+speciesRoutes.patch(
+  '/:id',
+  authenticate,
+  authorizeRole('admin'),
+  validateRequest({ params: speciesIdParamSchema, body: renameSpeciesSchema }),
+  controller.rename,
 );

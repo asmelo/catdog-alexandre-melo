@@ -8,10 +8,9 @@ import type { Prisma, Species } from '@prisma/client';
  * O repositorio NAO lanca erro HTTP: ausencia e `null`, e quem decide se `null`
  * e um problema e o service.
  *
- * Escopo deste slice: apenas listagem e criacao. `update`, `delete` e a contagem
- * de animais vinculados chegam nas TASK-BACKEND-003 e 004 — declara-las agora
- * deixaria codigo morto atras de uma interface que ninguem implementa por
- * inteiro.
+ * Escopo ate aqui: listagem, criacao e renomeacao. `delete` e a contagem de
+ * animais vinculados chegam na TASK-BACKEND-004 — declara-los agora deixaria
+ * codigo morto atras de uma interface que ninguem implementa por inteiro.
  */
 
 /**
@@ -30,15 +29,38 @@ export interface CreateSpeciesData {
   readonly nameNormalized: string;
 }
 
+/**
+ * Dados da renomeacao: a MESMA forma da criacao, e nao uma segunda declaracao
+ * dela. As duas escritas gravam o par `name` / `nameNormalized` derivado do
+ * mesmo ponto (`speciesNameKey`), entao um alias nomeado mantem a intencao
+ * legivel na assinatura de `rename` sem permitir que as duas formas divirjam.
+ *
+ * `id` NAO entra aqui: ele e imutavel (RN-15) e vive apenas no `where`.
+ */
+export type RenameSpeciesData = CreateSpeciesData;
+
 export interface SpeciesRepository {
   /**
    * RN-11 — todas as especies, sem paginacao e sem filtro (RN-12), ordenadas
    * alfabeticamente ignorando a caixa.
    */
   listAll(): Promise<Species[]>;
+  /**
+   * Consulta pela chave primaria. Ausencia e `null` — e o service que decide se
+   * isso e um problema (RN-14).
+   */
+  findById(id: string): Promise<Species | null>;
   /** Consulta pela chave de unicidade da RN-04. Ausencia e `null`. */
   findByNameKey(nameNormalized: string): Promise<Species | null>;
   create(data: CreateSpeciesData): Promise<Species>;
+  /**
+   * HU-04 — grava o novo nome e a nova chave de unicidade da especie `id`.
+   *
+   * Devolve a linha ja atualizada porque a resposta do `PATCH` e o recurso
+   * (`200 PublicSpecies`): uma segunda leitura depois da escrita so acrescentaria
+   * viagem ao banco e uma janela para ler o estado de outra sessao.
+   */
+  rename(id: string, data: RenameSpeciesData): Promise<Species>;
   /**
    * Mesma porta ligada a uma transacao em andamento. Nenhum caso de uso deste
    * slice abre transacao (a criacao e uma escrita unica), mas a porta ja nasce
@@ -70,12 +92,37 @@ export class PrismaSpeciesRepository implements SpeciesRepository {
     return this.db.species.findMany({ orderBy: { nameNormalized: 'asc' } });
   }
 
+  /**
+   * `findUnique` e nao `findUniqueOrThrow`: o "nao encontrada" da RN-14 e uma
+   * resposta prevista do recurso, e nao uma falha de infraestrutura. Deixar o
+   * Prisma lancar aqui obrigaria o service a inspecionar codigo de erro do ORM
+   * para produzir um `404` que ele ja sabe produzir a partir de `null`.
+   */
+  async findById(id: string): Promise<Species | null> {
+    return this.db.species.findUnique({ where: { id } });
+  }
+
   async findByNameKey(nameNormalized: string): Promise<Species | null> {
     return this.db.species.findUnique({ where: { nameNormalized } });
   }
 
   async create(data: CreateSpeciesData): Promise<Species> {
     return this.db.species.create({
+      data: { name: data.name, nameNormalized: data.nameNormalized },
+    });
+  }
+
+  /**
+   * O `data` lista os campos um a um em vez de repassar o objeto recebido: e o
+   * que impede uma chave inesperada de virar coluna atualizada caso a forma de
+   * `RenameSpeciesData` cresca. `id` fica so no `where` (RN-15).
+   *
+   * `updatedAt` nao aparece: quem o grava e o `@updatedAt` do schema Prisma —
+   * nenhum `new Date()` participa da renomeacao.
+   */
+  async rename(id: string, data: RenameSpeciesData): Promise<Species> {
+    return this.db.species.update({
+      where: { id },
       data: { name: data.name, nameNormalized: data.nameNormalized },
     });
   }

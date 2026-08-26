@@ -4,7 +4,12 @@ import type { PublicSpecies } from '~/domains/species/mappers/species.mapper';
 import { PrismaSpeciesRepository } from '~/domains/species/repositories/species.repository';
 import { CreateSpeciesService } from '~/domains/species/services/create-species.service';
 import { ListSpeciesService } from '~/domains/species/services/list-species.service';
-import type { CreateSpeciesBody } from '~/domains/species/species.validators';
+import { RenameSpeciesService } from '~/domains/species/services/rename-species.service';
+import type {
+  CreateSpeciesBody,
+  RenameSpeciesBody,
+  SpeciesIdParams,
+} from '~/domains/species/species.validators';
 import { prisma } from '~/infra/prisma/prisma-client';
 import { HTTP_STATUS } from '~/shared/http/http-status';
 
@@ -17,8 +22,20 @@ import { HTTP_STATUS } from '~/shared/http/http-status';
  * corpo de resposta de erro.
  */
 
-/** Nenhuma rota deste slice tem parametro de caminho. */
+/** As rotas de colecao (`GET /` e `POST /`) nao tem parametro de caminho. */
 type SemParametros = Record<string, never>;
+
+/**
+ * Parametros das rotas de recurso individual. O `SemParametros` do restante do
+ * arquivo (e do dominio auth) nao serve aqui: ele declara que NENHUMA chave
+ * existe em `req.params`, e ler `id` dele nao compilaria.
+ *
+ * A forma vem do `z.infer` do `speciesIdParamSchema`, e nao de um `{ id: string }`
+ * escrito de novo: a garantia em tempo de execucao e do `validateRequest`
+ * montado na rota, que parseia e REATRIBUI `req.params` — derivar o tipo do
+ * mesmo schema e o que mantem as duas pontas presas.
+ */
+type ParametrosDeEspecie = SpeciesIdParams;
 
 /**
  * Envelope de colecao. Este e o PRIMEIRO endpoint de colecao do projeto, e
@@ -42,6 +59,13 @@ type ManipuladorDeLista = RequestHandler<SemParametros, RespostaDeColecao, unkno
  */
 type ManipuladorDeCriacao = RequestHandler<SemParametros, PublicSpecies, CreateSpeciesBody>;
 
+/** `PATCH /:id`: o identificador vem do caminho e o nome novo, do corpo. */
+type ManipuladorDeRenomeacao = RequestHandler<
+  ParametrosDeEspecie,
+  PublicSpecies,
+  RenameSpeciesBody
+>;
+
 /**
  * Dependencias em um objeto, no mesmo formato de `AuthControllerDependencies`.
  * O parametro opcional da fabrica existe para que os testes de rota da
@@ -50,6 +74,7 @@ type ManipuladorDeCriacao = RequestHandler<SemParametros, PublicSpecies, CreateS
 export interface SpeciesControllerDependencies {
   readonly listSpecies: ListSpeciesService;
   readonly createSpecies: CreateSpeciesService;
+  readonly renameSpecies: RenameSpeciesService;
 }
 
 export class SpeciesController {
@@ -75,6 +100,24 @@ export class SpeciesController {
 
     resposta.status(HTTP_STATUS.CREATED).json(especie);
   };
+
+  /**
+   * HU-04. `200` com o recurso ATUALIZADO e plano, na mesma representacao do
+   * `POST` — e o que permite a interface substituir a linha da lista pelo que
+   * voltou, sem recarregar a colecao inteira.
+   *
+   * Le exatamente `params.id` e `body.name` e chama UM service: a decisao entre
+   * `200`, `404` e `409` e inteira do `RenameSpeciesService`, e o desfecho de
+   * erro sai pelo `error-handler.middleware.ts`.
+   */
+  readonly rename: ManipuladorDeRenomeacao = async (requisicao, resposta) => {
+    const especie = await this.services.renameSpecies.execute({
+      id: requisicao.params.id,
+      name: requisicao.body.name,
+    });
+
+    resposta.status(HTTP_STATUS.OK).json(especie);
+  };
 }
 
 /**
@@ -93,5 +136,6 @@ export function createSpeciesController(
   return new SpeciesController({
     listSpecies: new ListSpeciesService(species),
     createSpecies: new CreateSpeciesService(species),
+    renameSpecies: new RenameSpeciesService(species),
   });
 }
