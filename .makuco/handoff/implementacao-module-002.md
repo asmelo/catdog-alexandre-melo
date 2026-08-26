@@ -25,7 +25,8 @@
 | 002 backend species list/create | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `a410112` |
 | 003 backend species rename | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 15 suítes / 138 testes | `ba5ae3c` |
 | 004 backend species delete + guarda de uso | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `1207ece` |
-| 005 backend suíte de testes | **concluída** — 3 rodadas de revisão (2 reprovações), aprovada na 3ª | typecheck exit 0; **20 suítes / 270 testes**; cobertura **99.58 / 95.45 / 100 / 99.58**, domínio species em 100/100/100/100 | ver `git log` |
+| 005 backend suíte de testes | **concluída** — 3 rodadas de revisão (2 reprovações), aprovada na 3ª | typecheck exit 0; **20 suítes / 270 testes**; cobertura **99.58 / 95.45 / 100 / 99.58**, domínio species em 100/100/100/100 | `76ea63d` |
+| 006 frontend primitivas de UI | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes (baseline do frontend, intacta) | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -122,8 +123,27 @@ Alcance do erro, corrigido ou a corrigir:
   regressão** — o bloco inline da TASK-BACKEND-002 tinha o mesmo desfecho, e a poluição de protótipo foi testada e não ocorre
   (`Object.prototype` permanece limpo). Desvio da letra da RN-13 sem impacto observável. Tratar junto com a dívida do `auth`.
 
+**TASK-FRONTEND-006** — seis primitivas de UI em `services/frontend/src/components/ui/`: `icons.tsx`,
+`icon-button.tsx`, `data-list.tsx`, `feedback-states.tsx`, `status-message.tsx`, `confirm-dialog.tsx`.
+**Reprovada na rodada 1**: a armadilha de foco do `ConfirmDialog` só funcionava com o foco já dentro do painel —
+clicar na sobreposição ou abrir com `isSubmitting` jogava o foco no `<body>`, e aí `Escape` parava de funcionar e
+`Tab` alcançava botões atrás do diálogo, apesar do `aria-modal="true"`. O furo tinha três entradas independentes,
+todas fechadas. Aprovada na rodada 2.
+
+Divergência de cor aceita: a task pede `brand-orange` no botão de confirmar, medido em **3.72:1** (reprova WCAG AA);
+usado `brand-orange-dark` (**4.845:1**), token que já existia. O hover foi para `border-ink`, porque devolver o
+laranja claro desfazia a correção.
+
 ## Achados a repassar para tasks futuras
 
+- **TASK-FRONTEND-011 — o jsdom não reproduz o blur automático de elemento desabilitado.** Um teste que só faça
+  `rerender` para `isSubmitting` **passa mesmo com a falha de armadilha de foco presente** — o `blur()` explícito
+  precisa estar dentro do mesmo `act()` do rerender. E `fireEvent.keyDown` não move foco nenhum: todo caso de
+  tabulação tem que usar `userEvent`, ou a suíte fica verde sem exercitar nada.
+- **TASK-FRONTEND-009/010 — o `ConfirmDialog` fica sem nenhuma saída durante `isSubmitting`** (dois botões
+  desabilitados, `Escape` ignorado, `preventDefault()` do `Tab` incondicional). É correto para operação transitória,
+  mas vira armadilha de teclado real (SC 2.1.2) se a tela **não devolver `isSubmitting` a `false`** em erro ou
+  timeout. Garantir isso é responsabilidade de quem consome.
 - **TASK-FRONTEND-011 — OBRIGATÓRIO, não é sugestão:** a L74 da task pede só "ordem dos nomes no DOM", sem critério
   e sem nome acentuado. **Com ASCII os dois critérios de ordenação coincidem** — foi exatamente essa coincidência que
   deixou a premissa errada sobreviver duas rodadas de revisão no backend. O teste precisa de par acentuado
@@ -134,6 +154,15 @@ Alcance do erro, corrigido ou a corrigir:
 - **Para a TASK-BACKEND-003:** o bloco anti-chave-extra de `species.validators.ts` já é a segunda cópia do `objetoSemCamposExtras` do auth. Não faça a terceira — reuse o que existe em species.
 - **Para a TASK-BACKEND-005:** acrescentar o modelo `species` ao `tests/fakes/prisma-double.ts`; decidir entre usar ou remover o parâmetro `dependencias?` de `createSpeciesController` (hoje sem chamador — a estratégia real de teste do projeto dubla o módulo `~/infra/prisma/prisma-client`); a corrida do CT-12 e a ordenação dos CT-13/CT-14 estão verificadas só por leitura estática até lá.
 - **Para a TASK-BACKEND-002/003 (criação e renomeação):** em Postgres, a violação de índice único aborta a transação inteira (`25P02 current transaction is aborted` no statement seguinte ao `23505`). Se o service capturar o `P2002` **dentro** de uma transação interativa para convertê-lo em `SpeciesNameAlreadyExistsError`, nenhuma consulta posterior roda naquela transação. O `INSERT` precisa ser a última operação da transação, ou o tratamento do conflito fica fora dela. A RN-16 continua garantida pelo banco — muda só a forma de traduzir o erro.
+
+## Divergência entre regra declarada e configuração real
+
+`exactOptionalPropertyTypes` é declarada como regra não negociável do projeto, mas está ligada **apenas no
+backend**. `services/frontend/tsconfig.json` tem `strict`, `noUncheckedIndexedAccess`, `noUnusedLocals`,
+`noUnusedParameters` e `noFallthroughCasesInSwitch` — **não** tem `exactOptionalPropertyTypes`. Ligá-la agora pode
+quebrar o frontend de autenticação já em produção, então não foi ligada no meio do módulo. As tasks de frontend do
+MODULE-002 estão sendo escritas para serem seguras sob a flag mesmo assim. **Decisão de ligar (e de arcar com o
+ajuste no código existente) fica para o dono do projeto.**
 
 ## Duas tasks a abrir, fora do escopo do MODULE-002
 
