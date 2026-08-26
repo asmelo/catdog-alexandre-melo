@@ -24,7 +24,8 @@
 | 001 backend species model/migration | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `a605360` |
 | 002 backend species list/create | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `a410112` |
 | 003 backend species rename | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 15 suítes / 138 testes | `ba5ae3c` |
-| 004 backend species delete + guarda de uso | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | ver `git log` |
+| 004 backend species delete + guarda de uso | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `1207ece` |
+| 005 backend suíte de testes | **concluída** — 3 rodadas de revisão (2 reprovações), aprovada na 3ª | typecheck exit 0; **20 suítes / 270 testes**; cobertura **99.58 / 95.45 / 100 / 99.58**, domínio species em 100/100/100/100 | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -71,6 +72,39 @@ Nenhum ponto de instanciação muda. Além disso, a TASK-010 precisa: FK `animal
 CT-24/25/26/32 na numeração da feature de espécies, **CT-81 a CT-86 na numeração da feature de animais**. São os
 mesmos critérios em dois espaços de numeração; não são conjuntos diferentes.
 
+**TASK-BACKEND-005** — suíte de testes do backend da feature. **Reprovada duas vezes.** As revisões usaram
+**teste de mutação** em vez de aceitar a cobertura, e as duas acharam coisa real:
+- rodada 1: o teste da RN-09 não discriminava nada, porque o dublê de Prisma entregava `tx === cliente` —
+  trocar `withTransaction(tx)` por `withTransaction(this.prisma)` na produção deixava 249/249 verdes;
+- rodada 2: a **premissa de ordenação binária foi medida contra o banco e refutada** (ver seção abaixo). O teste
+  discriminante pedido na rodada 1 tinha entrado antes da medição e prendia a ordem **errada** por escrito.
+
+Aprovada na rodada 3 com todos os mutantes de controle morrendo. Fecha a FEATURE-001 do backend.
+
+## Achado de arquitetura: a ordenação de nomes acentuados é por LOCALE, não binária
+
+Medido contra o banco Supabase de dev na revisão da TASK-BACKEND-005 (rodada 2), pela `DIRECT_URL`:
+
+    PostgreSQL 17.6 | datlocprovider = 'i' (ICU) | datcollate = en_US.UTF-8
+    species.name_normalized -> collation "default" (sem COLLATE explícito)
+    SELECT name FROM species ORDER BY name_normalized ASC  ->  Ágil, Cão, Cavalo, Gato, Zebra
+
+Comparação **binária** daria `Cavalo, Cão, Gato, Zebra, Ágil`. O banco ordena por locale, e o resultado
+coincide com `localeCompare('pt-BR')`. **A premissa binária que circulava nas tasks é falsa.**
+
+Alcance do erro, corrigido ou a corrigir:
+
+- `tests/fakes/in-memory-species.repository.ts` e `tests/integration/species-routes.spec.ts` — o teste chegou a
+  prender a ordem **errada** por escrito; corrigido na rodada 3.
+- Seção `## Implementation` da própria TASK-BACKEND-005, que mandava desligar o `localeCompare` — corrigida.
+- **TASK-FRONTEND-009 desta feature, ~L44**, que afirma ser a comparação binária "exatamente o critério do
+  `ORDER BY` do servidor" — corrigida antes de a task ser implementada.
+- **FEATURE-003 (vitrine), RN-30 / CT-51** — cidades do filtro ordenadas por nome, com acentos. **Conferir ao
+  chegar lá.** A ordenação principal da vitrine (RN-14, `createdAt` desc) e o cálculo de idade **não** são
+  afetados: nenhum dos dois compara texto.
+- A migration de `species` **não declara `COLLATE`**, então a ordem continua sendo propriedade do ambiente.
+  Mudar isso exigiria migration nova; fica registrado, não corrigido.
+
 ## Dívida encontrada fora do escopo — registrar em `technical-debt.md` quando a TASK-010 da feature de animais criar o arquivo
 
 - **`src/domains/auth/auth.validators.ts`, fábrica `objetoSemCamposExtras`**: usa `chave in forma`, que consulta a
@@ -79,6 +113,10 @@ mesmos critérios em dois espaços de numeração; não são conjuntos diferente
   mas o domínio `auth` está fora do escopo das tasks do MODULE-002. Descoberto na revisão da TASK-BACKEND-003, que
   encontrou o mesmo furo introduzido em `species` (lá foi corrigido).
 
+- **Os quatro services de `auth` que abrem transação** têm o mesmo mutante da RN-09 sobrevivendo: trocar
+  `withTransaction(tx)` por `withTransaction(this.prisma)` não quebra teste nenhum. **Não é regressão** — antes da
+  TASK-BACKEND-005 isso era literalmente indetectável, porque o dublê de Prisma entregava `tx === cliente`. Foi essa
+  task que tornou a regra observável pela primeira vez, sem que ninguém ainda a observe no domínio `auth`.
 - **`__proto__` como chave de corpo** (`{"name":"Gato","__proto__":"x"}`) responde 201/200 em vez de 400: o `superRefine` roda
   sobre a saída do `.passthrough()` e o Zod monta o objeto por atribuição, então `__proto__` some antes do laço. **Não é
   regressão** — o bloco inline da TASK-BACKEND-002 tinha o mesmo desfecho, e a poluição de protótipo foi testada e não ocorre
@@ -86,9 +124,24 @@ mesmos critérios em dois espaços de numeração; não são conjuntos diferente
 
 ## Achados a repassar para tasks futuras
 
+- **TASK-FRONTEND-011 — OBRIGATÓRIO, não é sugestão:** a L74 da task pede só "ordem dos nomes no DOM", sem critério
+  e sem nome acentuado. **Com ASCII os dois critérios de ordenação coincidem** — foi exatamente essa coincidência que
+  deixou a premissa errada sobreviver duas rodadas de revisão no backend. O teste precisa de par acentuado
+  (`"Ágil"` / `"Zebra"`) assertando a posição de inserção do hook da TASK-FRONTEND-009. Sem isso o mesmo erro se
+  repete no frontend sem ninguém notar.
+- **TASK-FRONTEND-011:** cobrir CT-21 e CT-23, declarados fora do escopo do backend.
+
 - **Para a TASK-BACKEND-003:** o bloco anti-chave-extra de `species.validators.ts` já é a segunda cópia do `objetoSemCamposExtras` do auth. Não faça a terceira — reuse o que existe em species.
 - **Para a TASK-BACKEND-005:** acrescentar o modelo `species` ao `tests/fakes/prisma-double.ts`; decidir entre usar ou remover o parâmetro `dependencias?` de `createSpeciesController` (hoje sem chamador — a estratégia real de teste do projeto dubla o módulo `~/infra/prisma/prisma-client`); a corrida do CT-12 e a ordenação dos CT-13/CT-14 estão verificadas só por leitura estática até lá.
 - **Para a TASK-BACKEND-002/003 (criação e renomeação):** em Postgres, a violação de índice único aborta a transação inteira (`25P02 current transaction is aborted` no statement seguinte ao `23505`). Se o service capturar o `P2002` **dentro** de uma transação interativa para convertê-lo em `SpeciesNameAlreadyExistsError`, nenhuma consulta posterior roda naquela transação. O `INSERT` precisa ser a última operação da transação, ou o tratamento do conflito fica fora dela. A RN-16 continua garantida pelo banco — muda só a forma de traduzir o erro.
+
+## Duas tasks a abrir, fora do escopo do MODULE-002
+
+1. **Regressão de atomicidade na FEATURE-002 (autenticação)** — os quatro services de auth que abrem transação têm o
+   mutante da RN-09 sobrevivendo. O molde pronto é o `executorDaTransacaoDe` do novo `prisma-double.ts`, hoje usado
+   só por `species`.
+2. **Declarar `COLLATE` explícito na migration de `species`** — é a causa-raiz do achado de ordenação, que custou
+   duas rodadas de revisão. Enquanto não for declarado, a ordem da RN-11 é propriedade do ambiente.
 
 ## Problemas / pendências
 

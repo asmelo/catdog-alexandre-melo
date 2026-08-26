@@ -1,9 +1,11 @@
 import {
   UserStatus,
   type EmailConfirmationToken,
+  type Prisma,
   type PrismaClient,
   type RefreshToken,
   type RefreshTokenRevokedReason,
+  type Species,
   type User,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
@@ -11,7 +13,16 @@ import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
 import type { CreateEmailConfirmationTokenInput } from '~/domains/auth/repositories/email-confirmation-token.repository';
 import type { CreateRefreshTokenInput } from '~/domains/auth/repositories/refresh-token.repository';
 import type { CreateUserInput } from '~/domains/auth/repositories/user.repository';
+import type {
+  CreateSpeciesData,
+  RenameSpeciesData,
+} from '~/domains/species/repositories/species.repository';
 
+import {
+  ArmazemDeEspecies,
+  erroDeRegistroAusente,
+  erroDeVinculoDeAnimal,
+} from './in-memory-species.repository';
 import {
   ArmazemDeRefreshTokens,
   ArmazemDeTokensDeConfirmacao,
@@ -46,12 +57,30 @@ import {
 export const armazemDeUsuarios = new ArmazemDeUsuarios();
 export const armazemDeTokensDeConfirmacao = new ArmazemDeTokensDeConfirmacao();
 export const armazemDeRefreshTokens = new ArmazemDeRefreshTokens();
+export const armazemDeEspecies = new ArmazemDeEspecies();
 
 const ARMAZENS: ReadonlyArray<Restauravel> = [
   armazemDeUsuarios,
   armazemDeTokensDeConfirmacao,
   armazemDeRefreshTokens,
+  armazemDeEspecies,
 ];
+
+/**
+ * Ids cuja exclusao deve falhar com `P2003`, como a chave estrangeira restritiva
+ * `animals.species_id` fara quando a feature de Cadastro de pets criar a tabela.
+ *
+ * Gancho e nao comportamento automatico: a CAMADA 2 da RN-09 nao tem como ser
+ * derivada do estado do duble hoje, porque nao existe tabela de animais para
+ * consultar. Ate la, o teste declara explicitamente qual especie o BANCO
+ * recusaria remover, e a suite exercita a traducao `P2003 -> SPECIES_IN_USE`
+ * (CA-15) que hoje e codigo inalcancavel em producao.
+ */
+const ESPECIES_COM_VINCULO_NO_BANCO = new Set<string>();
+
+export function simularVinculoDeAnimalNoBanco(speciesId: string): void {
+  ESPECIES_COM_VINCULO_NO_BANCO.add(speciesId);
+}
 
 interface Contagem {
   readonly count: number;
@@ -88,6 +117,28 @@ interface FiltroDeRefreshToken {
     readonly revokedReason: RefreshTokenRevokedReason;
     readonly replacedById?: string;
   };
+}
+
+/**
+ * As duas consultas de `PrismaSpeciesRepository`: por chave primaria
+ * (`findById`) e pela chave de unicidade da RN-04 (`findByNameKey`).
+ */
+interface FiltroDeEspecie {
+  readonly where: { readonly id?: string; readonly nameNormalized?: string };
+}
+
+/** RN-11 — a unica ordenacao que a listagem pede. */
+interface OrdenacaoDeEspecies {
+  readonly orderBy: { readonly nameNormalized: 'asc' | 'desc' };
+}
+
+/**
+ * `id` vive so no `where` (RN-15) e o `data` traz exatamente o par
+ * `name`/`nameNormalized` que a renomeacao grava.
+ */
+interface AtualizacaoDeEspecie {
+  readonly where: { readonly id: string };
+  readonly data: RenameSpeciesData;
 }
 
 /**
@@ -216,12 +267,92 @@ class DubleDePrisma {
   };
 
   /**
+   * Delegate de `species`. Os cinco metodos sao exatamente os que
+   * `PrismaSpeciesRepository` emite — nem um a mais: um metodo que a producao
+   * nao chama e um metodo que o duble nao precisa reproduzir com fidelidade.
+   */
+  readonly species = {
+    findUnique: (argumentos: FiltroDeEspecie): Promise<Species | null> =>
+      comoPromessa(() => {
+        const { id, nameNormalized } = argumentos.where;
+
+        if (id !== undefined) {
+          return armazemDeEspecies.buscarPorId(id);
+        }
+
+        if (nameNormalized !== undefined) {
+          return armazemDeEspecies.buscarPorChave(nameNormalized);
+        }
+
+        throw filtroNaoSuportado('species.findUnique', argumentos.where);
+      }),
+
+    /**
+     * A ordenacao vem do ARMAZEM e o `orderBy` recebido e conferido, nao
+     * ignorado: a RN-11 depende de o repositorio pedir `nameNormalized: 'asc'`,
+     * e um duble que ordenasse por conta propria deixaria os CT-13 e CT-14
+     * verdes mesmo se a producao parasse de pedir ordem alguma.
+     */
+    findMany: (argumentos: OrdenacaoDeEspecies): Promise<Species[]> =>
+      comoPromessa(() => {
+        if (argumentos.orderBy.nameNormalized !== 'asc') {
+          throw filtroNaoSuportado('species.findMany', argumentos.orderBy);
+        }
+
+        return armazemDeEspecies.listarOrdenado();
+      }),
+
+    create: (argumentos: { readonly data: CreateSpeciesData }): Promise<Species> =>
+      comoPromessa(() => armazemDeEspecies.criar(argumentos.data)),
+
+    update: (argumentos: AtualizacaoDeEspecie): Promise<Species> =>
+      comoPromessa(() => armazemDeEspecies.renomear(argumentos.where.id, argumentos.data)),
+
+    delete: (argumentos: { readonly where: { readonly id: string } }): Promise<Species> =>
+      comoPromessa(() => {
+        const { id } = argumentos.where;
+        const especie = armazemDeEspecies.buscarPorId(id);
+
+        /**
+         * A ORDEM reproduz a do Postgres: a linha e localizada antes de a
+         * constraint ser avaliada. Invertida, um id inexistente marcado no
+         * gancho responderia `409` em vez de `404`.
+         */
+        if (especie === null) {
+          throw erroDeRegistroAusente();
+        }
+
+        if (ESPECIES_COM_VINCULO_NO_BANCO.has(id)) {
+          throw erroDeVinculoDeAnimal();
+        }
+
+        armazemDeEspecies.remover(id);
+
+        return especie;
+      }),
+  };
+
+  /**
    * Transação interativa com rollback real. O `refresh-session.service.ts` conta
    * com ele: quando o compare-and-swap perde a corrida, o service lança de dentro
    * da transação exatamente para que o token recém-criado desapareça.
+   *
+   * O EXECUTOR ENTREGUE A CALLBACK E UM OBJETO DISTINTO DE `this`, e isso nao e
+   * detalhe: o Prisma real entrega um `TransactionClient` proprio, e um duble que
+   * devolvesse o proprio cliente tornaria `tx === prisma`. Com as duas
+   * referencias iguais, NENHUMA assercao sobre o argumento de
+   * `withTransaction(...)` conseguiria distinguir um colaborador rebindado a
+   * transacao de um colaborador ligado ao cliente global — que e exatamente a
+   * quebra da RN-09 que a suite precisa poder observar.
+   *
+   * Uma instancia NOVA (e nao um clone parcial) porque todo o estado vive nos
+   * armazens de modulo: o executor le e escreve as MESMAS linhas, entao a
+   * fidelidade de comportamento e integral e so a identidade muda.
    */
   async $transaction<T>(executar: (tx: DubleDePrisma) => Promise<T>): Promise<T> {
-    return executarComRollback(ARMAZENS, async () => executar(this));
+    const executorDaTransacao = new DubleDePrisma();
+
+    return executarComRollback(ARMAZENS, async () => executar(executorDaTransacao));
   }
 }
 
@@ -232,8 +363,27 @@ export function reiniciarPrismaDouble(): void {
   armazemDeUsuarios.limpar();
   armazemDeTokensDeConfirmacao.limpar();
   armazemDeRefreshTokens.limpar();
+  armazemDeEspecies.limpar();
+  /**
+   * O gancho de `P2003` tambem e zerado: sem isto, uma especie marcada como
+   * vinculada em um teste faria o teste seguinte que reaproveitasse o mesmo id
+   * sequencial receber `409` sem nenhuma relacao com o que ele configurou — e a
+   * suite passaria a depender da ordem de execucao.
+   */
+  ESPECIES_COM_VINCULO_NO_BANCO.clear();
   reiniciarSequenciaDeUuid();
 }
+
+/**
+ * Liga cada cliente dublado ao executor que o `$transaction` dele entrega. Um
+ * `WeakMap` e nao um campo do mock: acrescentar propriedade ao
+ * `DeepMockProxy<PrismaClient>` alargaria o tipo que os services recebem e faria
+ * o duble parecer ter uma API que o `PrismaClient` real nao tem.
+ */
+const EXECUTORES_POR_CLIENTE = new WeakMap<
+  DeepMockProxy<PrismaClient>,
+  DeepMockProxy<Prisma.TransactionClient>
+>();
 
 /**
  * `PrismaClient` dublado para os specs UNITÁRIOS, onde os repositórios já são os
@@ -250,14 +400,47 @@ export function criarPrismaComTransacao(
   ...armazens: ReadonlyArray<Restauravel>
 ): DeepMockProxy<PrismaClient> {
   const cliente = mockDeep<PrismaClient>();
+  /**
+   * O executor da transacao e um mock SEPARADO do cliente, pelo mesmo motivo
+   * registrado no `$transaction` de `DubleDePrisma`: com `tx === cliente`,
+   * `withTransaction(tx)` e `withTransaction(this.prisma)` produziriam
+   * argumentos indistinguiveis e a RN-09 viraria uma regra que a suite anuncia
+   * cobrir sem conseguir observar.
+   */
+  const executorDaTransacao = mockDeep<Prisma.TransactionClient>();
+
+  EXECUTORES_POR_CLIENTE.set(cliente, executorDaTransacao);
 
   cliente.$transaction.mockImplementation(async (executar) => {
     if (typeof executar !== 'function') {
       throw new Error('Dublê de Prisma: apenas a forma interativa de $transaction é suportada.');
     }
 
-    return executarComRollback(armazens, async () => executar(cliente));
+    return executarComRollback(armazens, async () => executar(executorDaTransacao));
   });
 
   return cliente;
+}
+
+/**
+ * Executor que `criarPrismaComTransacao(...)` entrega a callback de cada
+ * `$transaction` do `cliente`.
+ *
+ * Existe para que um teste possa asserir a IDENTIDADE do argumento recebido por
+ * `withTransaction(...)` — sem ele, um spy so consegue contar chamadas, e contar
+ * chamadas nao distingue o executor da transacao do cliente global.
+ */
+export function executorDaTransacaoDe(
+  cliente: DeepMockProxy<PrismaClient>,
+): DeepMockProxy<Prisma.TransactionClient> {
+  const executor = EXECUTORES_POR_CLIENTE.get(cliente);
+
+  if (executor === undefined) {
+    throw new Error(
+      'Dublê de Prisma: este cliente não foi criado por `criarPrismaComTransacao`, ' +
+        'então não há executor de transação associado a ele.',
+    );
+  }
+
+  return executor;
 }
