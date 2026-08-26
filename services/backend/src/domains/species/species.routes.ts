@@ -1,0 +1,50 @@
+import { Router } from 'express';
+
+import { createSpeciesController } from '~/domains/species/species.controller';
+import { createSpeciesSchema } from '~/domains/species/species.validators';
+import { authenticate } from '~/middlewares/authenticate.middleware';
+import { authorizeRole } from '~/middlewares/authorize-role.middleware';
+import { validateRequest } from '~/middlewares/validate-request.middleware';
+
+/**
+ * Rotas de especies, montadas em `/api/species`. Primeiras rotas do projeto a
+ * usar o `authorizeRole` — o middleware existe e esta testado desde a
+ * FEATURE-002, mas nenhuma rota o montava ainda.
+ *
+ * ORDEM OBRIGATORIA dos middlewares em toda rota deste arquivo:
+ * `authenticate` -> `authorizeRole('admin')` -> `validateRequest` -> handler.
+ *
+ * 1. `authorizeRole` DEPOIS de `authenticate` porque ele le `req.authUser`;
+ *    montado antes, encontraria a identidade ausente, lancaria
+ *    `SessionExpiredError` (401) e a rota nunca autorizaria ninguem — nem o
+ *    admin (RN-01 / CT-30 / CT-31).
+ * 2. `validateRequest` por ultimo: quem nao pode operar o recurso nao paga o
+ *    parsing do schema, e um `cliente` recebe 403 mesmo enviando corpo
+ *    invalido, sem que a resposta revele o formato aceito.
+ *
+ * SEM LIMITADOR DE TAXA em nenhuma rota (Decisao 7 do changelog): os limitadores
+ * do projeto protegem endpoints de credencial contra forca bruta e contra uso do
+ * servidor como ferramenta de spam. Nenhum dos dois riscos existe aqui — e um
+ * CRUD administrativo autenticado, de baixo volume e sem envio de e-mail — e
+ * limitar castigaria o administrador que cadastra varias especies em sequencia.
+ */
+
+const controller = createSpeciesController();
+
+export const speciesRoutes: Router = Router();
+
+/**
+ * HU-03. Sem `validateRequest`: a rota nao aceita corpo, parametro de caminho
+ * nem query (RN-12). Declarar um schema vazio faria um cliente que enviasse
+ * `?page=1` receber 400 em vez de simplesmente ter o parametro ignorado.
+ */
+speciesRoutes.get('/', authenticate, authorizeRole('admin'), controller.list);
+
+/** HU-02. */
+speciesRoutes.post(
+  '/',
+  authenticate,
+  authorizeRole('admin'),
+  validateRequest({ body: createSpeciesSchema }),
+  controller.create,
+);
