@@ -28,7 +28,8 @@
 | 005 backend suíte de testes | **concluída** — 3 rodadas de revisão (2 reprovações), aprovada na 3ª | typecheck exit 0; **20 suítes / 270 testes**; cobertura **99.58 / 95.45 / 100 / 99.58**, domínio species em 100/100/100/100 | `76ea63d` |
 | 006 frontend primitivas de UI | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes (baseline do frontend, intacta) | `148aa31` |
 | 007 frontend sidebar e rotas admin | **concluída** — aprovada na rodada 1; correção visual + rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `c1a17c6` |
-| 008 frontend camada de API e validação | **concluída** — aprovada na rodada 1 (2 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
+| 008 frontend camada de API e validação | **concluída** — aprovada na rodada 1 (2 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `c2d2167` |
+| 009 frontend tela de espécies (listar/criar) | **concluída** — aprovada na rodada 1 (3 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -165,8 +166,38 @@ A revisão refez a comparação por exaustão — **709.483 entradas**, incluind
 **uma única divergência**, a declarada e deliberada: a medição de `speciesNameKey` (caso `U+0130`), que corre na
 direção segura (servidor mais estrito, mesma mensagem de volta, custo de uma viagem de rede).
 
+**TASK-FRONTEND-009** — `use-species-collection.ts`, `species-create-form.tsx`, `species-row.tsx` e a tela em
+`species-page.tsx`. **Corrigida uma corrida real**, achada pela revisão lendo o código: `recarregar` não sequenciava
+a requisição em voo, então um `POST` que concluísse durante um `GET` pendente era apagado pela resposta atrasada —
+a espécie sumia da lista com "criada com sucesso" ainda na tela.
+
+A revisão sugeriu número de sequência; o agente de correção **contestou e estava certo**, e o revisor se retratou
+depois de reproduzir os dois lados: quem envelhece a resposta não é uma listagem mais nova, é a **escrita** do meio
+do voo — a listagem continua sendo a mais recente e passa pelo teste de identidade. A solução tem duas peças:
+número de sequência (cobre listagem × listagem, que a 010 pode abrir) **mais** reaplicação das escritas locais
+ocorridas depois da partida da listagem em voo. Reaplicar, e não descartar a resposta obsoleta, porque descartar
+salvaria a espécie criada mas jogaria fora as outras que a listagem trouxe.
+
 ## Achados a repassar para tasks futuras
 
+- **TASK-FRONTEND-010 — DUAS ARMADILHAS CONCRETAS, as duas achadas na revisão da 009:**
+  1. **Toda escrita local tem que passar por `escrever`** em `use-species-collection.ts`. Chamar `setSpecies`
+     direto reintroduz a corrida corrigida. A regra **não está protegida por nada além de comentário**. E ela
+     repousa numa pré-condição não enunciada: toda escrita registrada já precisa estar **durável no servidor**.
+     **Exclusão otimista quebraria** — a escrita seria zerada na partida da listagem seguinte e o item
+     **reapareceria** na lista.
+  2. **O `ConfirmDialog` precisa de cuidado extra na exclusão.** O cleanup dele (`confirm-dialog.tsx:118-124`)
+     devolve o foco chamando `focus()` no elemento que o abriu — que é a lixeira **da linha que acabou de ser
+     excluída**. A linha desmonta no mesmo instante, o `focus()` cai sobre elemento já destacado do DOM e o foco
+     vai para o `<body>`: exatamente o defeito que aquele comentário diz evitar. É o primeiro fluxo do projeto em
+     que quem abre o diálogo desaparece ao confirmar.
+- **TASK-FRONTEND-011 — BLOQUEANTE, e é regressão que a 009 causou:** `app-routes.spec.tsx` declara na L31-33 que
+  dubla `auth-api` porque "nenhuma requisição pode escapar". A árvore agora monta `SpeciesPage`, que chama
+  `species-api` **sem dublê** — a invariante do próprio arquivo deixou de ser cumprida, sustentada só pelo `fetch`
+  que lança em `tests/setup.ts`. Daí os 5 avisos de `act()`. Correção: `jest.mock('~/services/api/species-api')`
+  ao lado da L34 e `mockResolvedValue({ items: [] })` no `beforeEach` da L44. **Uma guarda de `montado` não
+  silencia o aviso** — o React 18 já descarta essas atualizações; o componente ainda está montado quando o
+  `.catch` dispara.
 - **TASK-FRONTEND-011 — teste de contrato de fonte para os caracteres invisíveis.** A regra de higienização existe
   agora **duas vezes** (backend e frontend) e nada no build cruza os dois arquivos. Fixar um caso de fronteira
   (`"A"×60 + U+200B`) **não basta**: o modo de deriva provável é o servidor **acrescentar** um code point, e aí o
