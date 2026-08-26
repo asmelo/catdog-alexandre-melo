@@ -1,14 +1,20 @@
-import { screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 
 import { App } from '~/App';
+import { AuthContext } from '~/contexts/auth/auth-context';
 import { AdminLayout } from '~/layouts/admin-layout';
 import { ClientLayout } from '~/layouts/client-layout';
-import { ROUTE_PATHS } from '~/routes/route-paths';
+import { ADMIN_DEFAULT_PATH, ROUTE_PATHS } from '~/routes/route-paths';
 import * as authApi from '~/services/api/auth-api';
+import * as speciesApi from '~/services/api/species-api';
+import { MESSAGES } from '~/utils/messages';
 
 import {
   ID_DA_LOCALIZACAO,
+  MonitorDeLocalizacao,
   USUARIO_ADMIN,
   USUARIO_CLIENTE,
   criarSessao,
@@ -30,10 +36,21 @@ import {
  *
  * `auth-api` e dublado porque a arvore importa a tela de login e a de confirmacao,
  * que chamam a API — e nenhuma requisicao pode escapar (AC #2).
+ *
+ * `species-api` e dublado pelo mesmo motivo e por um SEGUNDO, que vale o
+ * registro: `/admin` passou a renderizar a tela de especies, e ela dispara
+ * `GET /api/species` no efeito de mount. Sem o dublê, a guarda de rede de
+ * `tests/setup.ts` LANCA, a promessa rejeita numa microtarefa POSTERIOR ao corpo
+ * sincrono do teste e o `setStatus('erro')` resultante cai fora de `act` — os
+ * cinco avisos "An update to SpeciesPage inside a test was not wrapped in act(...)"
+ * que a suite emitia. Eles SEMPRE pertenceram a este arquivo (a execucao isolada
+ * dele os reproduz na integra) e nao a nenhuma interacao entre suites.
  */
 jest.mock('~/services/api/auth-api');
+jest.mock('~/services/api/species-api');
 
 const apiDublada = jest.mocked(authApi);
+const especiesDubladas = jest.mocked(speciesApi);
 
 /**
  * Os dublês do modulo automockado devolvem `undefined`, e a tela de confirmacao
@@ -42,6 +59,23 @@ const apiDublada = jest.mocked(authApi);
  * do codigo sob teste.
  */
 beforeEach(() => {
+  /**
+   * A LISTAGEM FICA RETIDA EM VOO, e a escolha nao e preguica — foi medida.
+   *
+   * `mockResolvedValue({ items: [] })` NAO resolve o problema: piora. Uma promessa
+   * ja resolvida agenda o `.then` como microtarefa e as DUAS atualizacoes de
+   * estado da resolucao (`setSpecies` e `setStatus('pronto')`) caem fora do `act`
+   * do `render`, que e sincrono e nao drena microtarefas — de cinco avisos a
+   * suite passa a DEZ (verificado). Fazer os testes existentes `await` tambem esta
+   * fora de questao: sao a regressao obrigatoria da FEATURE-002 e o corpo deles
+   * nao pode mudar.
+   *
+   * Uma promessa PENDENTE nao agenda continuacao nenhuma: a tela fica no estado de
+   * carga, que e um retrato legitimo e deterministico. O que este arquivo afirma e
+   * a MONTAGEM (rota, guarda, layout, titulo) — nada disso depende do conteudo da
+   * lista, que e objeto de `species-page.spec.tsx`.
+   */
+  especiesDubladas.listSpecies.mockReturnValue(new Promise(() => undefined));
   apiDublada.confirmEmail.mockResolvedValue({ message: 'Conta confirmada! Faça login para continuar.' });
   apiDublada.resendConfirmation.mockResolvedValue({ message: 'Novo link enviado.' });
 });
@@ -350,5 +384,213 @@ describe('AppRoutes — raiz, splash e rota inexistente', () => {
     // engoliria o clique do proprio botao de submit.
     expect(decoracao).not.toBeNull();
     expect(decoracao?.querySelectorAll('svg')).toHaveLength(16);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*  MODULE-002 / FEATURE-001 — a rota de especies e o que ela mudou            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Botao que anda para TRAS no historico do roteador.
+ *
+ * Existe porque o `replace` de um `<Navigate>` nao deixa rastro nenhum no DOM: a
+ * unica forma de observa-lo e verificar PARA ONDE o "voltar" leva. Sem ele, um
+ * `replace` esquecido passaria despercebido — e o usuario ficaria preso num laco
+ * do qual nao sai.
+ */
+function BotaoDeVoltar(): ReactElement {
+  const navegar = useNavigate();
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navegar(-1);
+      }}
+    >
+      Voltar no histórico
+    </button>
+  );
+}
+
+/**
+ * Monta a aplicacao sobre um historico com MAIS DE UMA entrada.
+ *
+ * `renderizarComSessao` do harness sempre cria uma unica entrada, e com uma so
+ * nao ha para onde voltar: os dois desfechos (`replace` e `push`) ficariam
+ * indistinguiveis. O harness NAO foi alterado — o que muda aqui e apenas o
+ * `MemoryRouter` deste teste.
+ */
+function renderizarComHistorico(
+  estado: EstadoDublado,
+  entradas: ReadonlyArray<string>,
+  indice: number,
+): void {
+  const sessao = criarSessao(estado);
+
+  render(
+    <MemoryRouter initialEntries={[...entradas]} initialIndex={indice}>
+      <AuthContext.Provider value={sessao.valor}>
+        <MonitorDeLocalizacao />
+        <BotaoDeVoltar />
+        <App />
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  );
+}
+
+describe('AppRoutes — rota de especies e redirecionamento de /admin', () => {
+  it('CT-39: o admin que chega a /admin encontra uma tela FUNCIONAL, sem pagina em branco nem 404', () => {
+    // Arrange
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_HOME);
+
+    // Act
+    const cabecalho = screen.getByRole('heading', { level: 1 });
+
+    // Assert
+    /**
+     * CA-01b. `/admin` continua sendo o destino do pos-login por role
+     * (`homePathForRole('admin')` nao mudou), mas deixou de renderizar pagina
+     * propria: ele redireciona. Se o redirecionamento nao existisse, o layout
+     * montaria com o `<Outlet>` VAZIO — pagina em branco — e o teste de
+     * redirecionamento por role da FEATURE-002 continuaria verde, porque a rota
+     * estaria certa.
+     */
+    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+    expect(cabecalho).toHaveTextContent('Espécies');
+    expect(screen.queryByText('Página não encontrada')).toBeNull();
+    expect(screen.getByRole('main')).not.toBeEmptyDOMElement();
+  });
+
+  it('CT-39: o destino de /admin e `ADMIN_DEFAULT_PATH`, e ele aponta para as especies', () => {
+    // Arrange
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_HOME);
+
+    // Act
+    const destino = rotaAtual();
+
+    // Assert
+    // A feature seguinte do modulo muda ESTA constante — e so ela. `ADMIN_HOME`
+    // continua `/admin` porque o `PublicOnlyRoute`, o `RoleRoute` e a tela de
+    // login dependem desse valor.
+    expect(ADMIN_DEFAULT_PATH).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+    expect(ADMIN_DEFAULT_PATH).toBe('/admin/especies');
+    expect(destino).toBe(ADMIN_DEFAULT_PATH);
+  });
+
+  it('CT-39: o redirecionamento de /admin usa `replace` — o "voltar" NAO devolve ao laco', async () => {
+    // Arrange
+    const usuario = userEvent.setup();
+
+    renderizarComHistorico(AUTENTICADO_ADMIN, [ROUTE_PATHS.CHECK_EMAIL, ROUTE_PATHS.ADMIN_HOME], 1);
+
+    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+
+    // Act
+    await usuario.click(screen.getByRole('button', { name: 'Voltar no histórico' }));
+
+    // Assert
+    /**
+     * SEM `replace`, a entrada `/admin` PERMANECE no historico: o "voltar" cai
+     * nela, ela redireciona de novo e o usuario nunca sai de `/admin/especies`.
+     * Com `replace`, a entrada de `/admin` e SUBSTITUIDA e o "voltar" alcanca a
+     * pagina de onde ele veio de verdade.
+     */
+    expect(rotaAtual()).toBe(ROUTE_PATHS.CHECK_EMAIL);
+  });
+
+  it('CT-40: dentro da area, a navegacao lateral tem os dois itens e marca o atual', () => {
+    // Arrange
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_SPECIES);
+
+    // Act
+    const navegacao = screen.getByRole('navigation', { name: 'Navegação administrativa' });
+    const itens = within(navegacao).getAllByRole('link');
+
+    // Assert
+    // Nenhuma asserção de cor: o par ativo/inativo ainda esta em movimento e um
+    // `expect` sobre classe transformaria a proxima decisao de produto em teste
+    // vermelho. `aria-current` e `href` sao contrato.
+    expect(itens.map((item) => item.textContent)).toEqual(['Animais', 'Espécies']);
+    expect(itens[0]).toHaveAttribute('href', ROUTE_PATHS.ADMIN_ANIMALS);
+    expect(itens[1]).toHaveAttribute('href', ROUTE_PATHS.ADMIN_SPECIES);
+    expect(itens[1]).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('/admin/especies NAO cai no catch-all: a rota filha vem antes dele', () => {
+    // Arrange
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_SPECIES);
+
+    // Act
+    const cabecalho = screen.getByRole('heading', { level: 1 });
+
+    // Assert
+    // O catch-all e `/admin/*` e casaria `/admin/especies` tambem: quem decide e a
+    // especificidade do roteador, e este teste e o que garante que ela nao virou
+    // ordem de declaracao por acidente.
+    expect(cabecalho).toHaveTextContent('Espécies');
+    expect(screen.queryByText('Página não encontrada')).toBeNull();
+  });
+
+  it('/admin/inexistente com sessao de admin cai na 404, e o catch-all continua DEPOIS da rota filha', () => {
+    // Arrange
+    renderizar(AUTENTICADO_ADMIN, `${ROUTE_PATHS.ADMIN_HOME}/inexistente`);
+
+    // Act
+    const cabecalho = screen.getByRole('heading', { level: 1 });
+
+    // Assert
+    expect(cabecalho).toHaveTextContent('Página não encontrada');
+    // A 404 substitui a AREA inteira: nao ha barra lateral por tras dela.
+    expect(screen.queryByRole('navigation', { name: 'Navegação administrativa' })).toBeNull();
+  });
+
+  it('CT-28: o `cliente` que abre /admin/especies e devolvido a propria area, sem conteudo administrativo', () => {
+    // Arrange
+    renderizar(AUTENTICADO_CLIENTE, ROUTE_PATHS.ADMIN_SPECIES);
+
+    // Act
+    const destino = rotaAtual();
+
+    // Assert
+    /**
+     * CA-19. O guard de rota e CONVENIENCIA DE NAVEGACAO: a verificacao que vale e
+     * a do servidor, que recusa a chamada com `403`. O que o guard entrega e nao
+     * exibir a um `cliente` uma tela que ele nao pode operar — e a asserção que
+     * importa e a de AUSENCIA no DOM, nao a de rota.
+     */
+    expect(destino).toBe(ROUTE_PATHS.CLIENT_HOME);
+    expect(screen.queryByText(MARCADOR_DE_ADMIN)).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Navegação administrativa' })).toBeNull();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Espécies' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Editar /u })).toBeNull();
+    expect(screen.queryByRole('button', { name: MESSAGES.SPECIES.CREATE_BUTTON })).toBeNull();
+  });
+
+  it('CT-29: o visitante sem sessao que abre /admin/especies e mandado ao login', () => {
+    // Arrange
+    renderizar(ANONIMO, ROUTE_PATHS.ADMIN_SPECIES);
+
+    // Act
+    const destino = rotaAtual();
+
+    // Assert
+    expect(destino).toBe(ROUTE_PATHS.LOGIN);
+    expect(screen.queryByText('Espécies')).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bem vindo!');
+  });
+
+  it('CT-29: a listagem de especies NAO e disparada por quem nem chega a tela', () => {
+    // Arrange
+    renderizar(ANONIMO, ROUTE_PATHS.ADMIN_SPECIES);
+
+    // Act
+    const listagens = especiesDubladas.listSpecies.mock.calls;
+
+    // Assert
+    // A guarda decide ANTES de qualquer filho montar: nenhuma requisicao de dado
+    // administrativo parte de uma sessao que nao existe.
+    expect(listagens).toHaveLength(0);
   });
 });

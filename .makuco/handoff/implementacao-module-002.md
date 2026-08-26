@@ -30,7 +30,20 @@
 | 007 frontend sidebar e rotas admin | **concluída** — aprovada na rodada 1; correção visual + rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `c1a17c6` |
 | 008 frontend camada de API e validação | **concluída** — aprovada na rodada 1 (2 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `c2d2167` |
 | 009 frontend tela de espécies (listar/criar) | **concluída** — aprovada na rodada 1 (3 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `917398c` |
-| 010 frontend edição em linha e exclusão | **concluída** — reprovada na rodada 1 (2 major), aprovada na rodada 2, mais acabamento | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
+| 010 frontend edição em linha e exclusão | **concluída** — reprovada na rodada 1 (2 major), aprovada na rodada 2, mais acabamento | typecheck exit 0; 12 suítes / 160 testes | `7d01817` |
+| 011 frontend suíte de testes | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; **19 suítes / 306 testes**; cobertura **99.70 / 98.62 / 100 / 99.70** | ver `git log` |
+
+### FEATURE-001 — FECHADA ✅
+
+**11/11 tasks concluídas, revisadas e commitadas.** Totais no fechamento:
+
+| Serviço | Suítes | Testes | Cobertura (stmts / branch / funcs / lines) |
+|---|---|---|---|
+| backend | 20 | 270 | 99.58 / 95.45 / 100 / 99.58 |
+| frontend | 19 | 306 | 99.70 / 98.62 / 100 / 99.70 |
+| **total** | **39** | **576** | ambos acima do gate de 80% |
+
+O código de produção da feature está em **100% de branch** nos dois serviços.
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -178,6 +191,22 @@ do voo — a listagem continua sendo a mais recente e passa pelo teste de identi
 número de sequência (cobre listagem × listagem, que a 010 pode abrir) **mais** reaplicação das escritas locais
 ocorridas depois da partida da listagem em voo. Reaplicar, e não descartar a resposta obsoleta, porque descartar
 salvaria a espécie criada mas jogaria fora as outras que a listagem trouxe.
+
+**TASK-FRONTEND-011** — suíte de testes do frontend: 7 specs novos e 2 ampliados, sem alterar nenhum arquivo de
+produção. Levou a suíte de 12/160 para 19/306 e **zerou os 5 avisos de `act()`**.
+
+Diagnóstico dos avisos, que três hipóteses anteriores erraram (**a minha inclusive**): eles sempre foram de
+`app-routes.spec.tsx`. Eu medi o arquivo **depois** da correção e obtive zero, e concluí errado que era interação
+entre suítes. A causa real: `/admin` passou a renderizar `SpeciesPage`, que dispara `GET /api/species` no mount;
+sem dublê a guarda de rede lança, e o `setStatus('erro')` do `.catch` cai fora do `act`. A correção que a revisão
+sugeriu (`mockResolvedValue({ items: [] })`) **piorava** — medido: 10 avisos em vez de 5, porque promessa já
+resolvida agenda o `.then` e as **duas** atualizações escapam, contra **uma** da rejeição. A solução foi devolver
+promessa **pendente**, que nunca agenda continuação.
+
+**Teste de contrato de fonte** implementado em três camadas: comparação textual do literal `CARACTERES_INVISIVEIS`
+lido dos **dois** serviços, varredura comportamental do BMP inteiro comparando as regexes code point a code point,
+e casos de fronteira. Validado por mutação: acrescentar um code point ao backend derruba os testes, e um deles
+**nomeia** o code point divergente.
 
 **TASK-FRONTEND-010** — edição em linha, diálogo de exclusão e a ligação dos dois com o hook. As duas armadilhas
 antecipadas pela revisão da 009 foram fechadas na primeira tentativa (nada otimista; foco indo para o `<h1>` em vez
