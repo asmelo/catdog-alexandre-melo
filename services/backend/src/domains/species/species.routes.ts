@@ -70,3 +70,22 @@ speciesRoutes.patch(
   validateRequest({ params: speciesIdParamSchema, body: renameSpeciesSchema }),
   controller.rename,
 );
+
+/**
+ * HU-05 / HU-06. Responde `204` sem corpo no sucesso e `409 SPECIES_IN_USE`
+ * quando a especie tem animais vinculados (RN-08) — a guarda vive no servidor e
+ * vale identicamente para chamadas feitas fora da interface (CT-32 / CA-15).
+ *
+ * `validateRequest` recebe SO `params`: a rota nao aceita corpo, e declarar um
+ * schema de corpo aqui faria um cliente que enviasse `{}` receber `400` em vez
+ * de simplesmente ter o corpo ignorado. O `speciesIdParamSchema` e o mesmo do
+ * `PATCH`, e nao uma segunda declaracao: e ele que faz um identificador
+ * malformado sair como `400` apontando `field: "id"` (CT-34).
+ */
+speciesRoutes.delete(
+  '/:id',
+  authenticate,
+  authorizeRole('admin'),
+  validateRequest({ params: speciesIdParamSchema }),
+  controller.remove,
+);

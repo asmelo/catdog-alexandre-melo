@@ -23,7 +23,8 @@
 |---|---|---|---|
 | 001 backend species model/migration | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `a605360` |
 | 002 backend species list/create | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | `a410112` |
-| 003 backend species rename | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 15 suítes / 138 testes | ver `git log` |
+| 003 backend species rename | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 15 suítes / 138 testes | `ba5ae3c` |
+| 004 backend species delete + guarda de uso | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 15 suítes / 138 testes | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -48,6 +49,27 @@ controller e rota). **Reprovada na rodada 1**: ao extrair a fábrica `objetoSemC
 que consulta a cadeia de protótipos — `toString`, `constructor`, `valueOf`, `hasOwnProperty` e `isPrototypeOf` passavam pela
 guarda de chave extra, quebrando a RN-13 desta task e **regredindo o CT-33 já aprovado na 002**. Corrigido para
 `Object.hasOwn(forma, chave)` e reconferido por execução nos dois schemas. Rodada 2 aprovou.
+
+**TASK-BACKEND-004** — entregou `DELETE /api/species/:id` com guarda de uso em duas camadas. A contagem de vínculo
+mora numa porta própria, `repositories/species-usage-counter.ts`, que **hoje devolve 0 sem emitir consulta** porque a
+entidade `Animal` ainda não existe. Ordem dentro da transação: `findById` (404) → `countAnimalsBySpecies` (409) →
+`deleteById` como última operação, com `catch` traduzindo `P2003` → `SpeciesInUseError` e `P2025` → `SpeciesNotFoundError`.
+
+## A dívida que a TASK-010 da feature de animais tem que quitar
+
+Está contraída e documentada em `services/backend/src/domains/species/repositories/species-usage-counter.ts`.
+São **quatro** edições, todas contidas nesse arquivo (a lista saiu com três na primeira versão; o quarto item foi
+acrescentado depois da revisão, porque sem ele o `noUnusedLocals` derruba o build com `TS6133`):
+
+  a. `constructor(_executor: Prisma.TransactionClient) {}` → `constructor(private readonly db: Prisma.TransactionClient) {}`
+  b. `async countAnimalsBySpecies(_speciesId: string)` → `(speciesId: string)`
+  c. corpo `return NENHUM_ANIMAL_CADASTRADO;` → `return this.db.animal.count({ where: { speciesId } });`
+  d. **remover a constante `NENHUM_ANIMAL_CADASTRADO`**, que fica órfã
+
+Nenhum ponto de instanciação muda. Além disso, a TASK-010 precisa: FK `animals.species_id` declarada com
+`onDelete: Restrict` (**nunca `Cascade`**), e a reexecução dos critérios contra a tabela e a constraint reais —
+CT-24/25/26/32 na numeração da feature de espécies, **CT-81 a CT-86 na numeração da feature de animais**. São os
+mesmos critérios em dois espaços de numeração; não são conjuntos diferentes.
 
 ## Dívida encontrada fora do escopo — registrar em `technical-debt.md` quando a TASK-010 da feature de animais criar o arquivo
 

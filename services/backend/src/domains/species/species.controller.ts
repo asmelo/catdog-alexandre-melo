@@ -2,7 +2,9 @@ import type { RequestHandler } from 'express';
 
 import type { PublicSpecies } from '~/domains/species/mappers/species.mapper';
 import { PrismaSpeciesRepository } from '~/domains/species/repositories/species.repository';
+import { PrismaSpeciesUsageCounter } from '~/domains/species/repositories/species-usage-counter';
 import { CreateSpeciesService } from '~/domains/species/services/create-species.service';
+import { DeleteSpeciesService } from '~/domains/species/services/delete-species.service';
 import { ListSpeciesService } from '~/domains/species/services/list-species.service';
 import { RenameSpeciesService } from '~/domains/species/services/rename-species.service';
 import type {
@@ -67,6 +69,13 @@ type ManipuladorDeRenomeacao = RequestHandler<
 >;
 
 /**
+ * `DELETE /:id`: o identificador vem do caminho e o sucesso e `204` sem corpo,
+ * dai o `void` no lugar do tipo de resposta. O corpo da requisicao e `unknown` e
+ * nao um schema: a rota nao aceita corpo.
+ */
+type ManipuladorDeExclusao = RequestHandler<ParametrosDeEspecie, void, unknown>;
+
+/**
  * Dependencias em um objeto, no mesmo formato de `AuthControllerDependencies`.
  * O parametro opcional da fabrica existe para que os testes de rota da
  * TASK-BACKEND-005 injetem services sobre um repositorio em memoria.
@@ -75,6 +84,7 @@ export interface SpeciesControllerDependencies {
   readonly listSpecies: ListSpeciesService;
   readonly createSpecies: CreateSpeciesService;
   readonly renameSpecies: RenameSpeciesService;
+  readonly deleteSpecies: DeleteSpeciesService;
 }
 
 export class SpeciesController {
@@ -118,6 +128,22 @@ export class SpeciesController {
 
     resposta.status(HTTP_STATUS.OK).json(especie);
   };
+
+  /**
+   * HU-05 / HU-06. `204` SEM CORPO — nem o recurso removido, nem uma mensagem
+   * de sucesso: o aviso "Especie excluida com sucesso." e texto de interface e
+   * vive no catalogo do frontend.
+   *
+   * Le exatamente `params.id` e chama UM service. A decisao entre `204`, `404`
+   * e `409 SPECIES_IN_USE` e inteira do `DeleteSpeciesService`, incluindo a
+   * guarda de vinculo da RN-08 — o controller nao conta animais nem consulta o
+   * banco, e o desfecho de erro sai pelo `error-handler.middleware.ts`.
+   */
+  readonly remove: ManipuladorDeExclusao = async (requisicao, resposta) => {
+    await this.services.deleteSpecies.execute({ id: requisicao.params.id });
+
+    resposta.status(HTTP_STATUS.NO_CONTENT).send();
+  };
 }
 
 /**
@@ -133,9 +159,27 @@ export function createSpeciesController(
 
   const species = new PrismaSpeciesRepository(prisma);
 
+  /**
+   * Porta SEPARADA do repositorio de especies (segregacao de interfaces): a
+   * contagem de animais pertence ao agregado Animal. A implementacao de hoje
+   * responde `0` sem consultar o banco, porque a tabela `animals` ainda nao
+   * existe — ver o `TODO` de `species-usage-counter.ts`, que amarra a troca a
+   * feature seguinte do MODULE-002.
+   *
+   * O `prisma` global e passado mesmo assim: e ele que o `withTransaction` vai
+   * substituir pelo `tx` dentro do service, e passa-lo agora deixa a troca da
+   * feature seguinte contida naquele arquivo.
+   */
+  const speciesUsage = new PrismaSpeciesUsageCounter(prisma);
+
   return new SpeciesController({
     listSpecies: new ListSpeciesService(species),
     createSpecies: new CreateSpeciesService(species),
     renameSpecies: new RenameSpeciesService(species),
+    /**
+     * O `prisma` entra como terceiro colaborador APENAS para abrir a transacao
+     * da RN-09 — e o unico service deste dominio que precisa de uma.
+     */
+    deleteSpecies: new DeleteSpeciesService(species, speciesUsage, prisma),
   });
 }

@@ -8,9 +8,9 @@ import type { Prisma, Species } from '@prisma/client';
  * O repositorio NAO lanca erro HTTP: ausencia e `null`, e quem decide se `null`
  * e um problema e o service.
  *
- * Escopo ate aqui: listagem, criacao e renomeacao. `delete` e a contagem de
- * animais vinculados chegam na TASK-BACKEND-004 — declara-los agora deixaria
- * codigo morto atras de uma interface que ninguem implementa por inteiro.
+ * Escopo: listagem, criacao, renomeacao e exclusao. A contagem de animais
+ * vinculados NAO entra aqui — ela vive em `species-usage-counter.ts`, porque
+ * pertence ao agregado Animal e nao ao de Especie (RN-08).
  */
 
 /**
@@ -62,12 +62,21 @@ export interface SpeciesRepository {
    */
   rename(id: string, data: RenameSpeciesData): Promise<Species>;
   /**
-   * Mesma porta ligada a uma transacao em andamento. Nenhum caso de uso deste
-   * slice abre transacao (a criacao e uma escrita unica), mas a porta ja nasce
-   * com o metodo porque a exclusao da TASK-BACKEND-004 verifica o vinculo e
-   * remove dentro da MESMA transacao (RN-09) — sem isto, um repositorio
-   * construido com o client global executaria fora dela e a atomicidade seria
-   * so aparente.
+   * HU-05 — remove definitivamente a especie `id` (RN-10: nao ha inativacao,
+   * arquivamento nem lixeira, e nenhuma coluna `deletedAt` a gravar).
+   *
+   * Devolve `void`: o `DELETE` responde `204` sem corpo, entao nao ha o que
+   * mapear. O contrato de ausencia deste metodo e o UNICO diferente do resto da
+   * porta — ele LANCA o `P2025` do Prisma em vez de devolver `null`, porque
+   * `delete` nao tem como sinalizar "nao achei" sem uma leitura extra. Quem
+   * traduz esse codigo para o desfecho de negocio continua sendo o service.
+   */
+  deleteById(id: string): Promise<void>;
+  /**
+   * Mesma porta ligada a uma transacao em andamento. E a exclusao que a exige:
+   * ela verifica o vinculo e remove dentro da MESMA transacao (RN-09) — sem
+   * isto, um repositorio construido com o client global executaria fora dela e
+   * a atomicidade seria so aparente.
    */
   withTransaction(executor: Prisma.TransactionClient): SpeciesRepository;
 }
@@ -125,6 +134,19 @@ export class PrismaSpeciesRepository implements SpeciesRepository {
       where: { id },
       data: { name: data.name, nameNormalized: data.nameNormalized },
     });
+  }
+
+  /**
+   * `delete` e nao `deleteMany`: o `deleteMany` responde `{ count: 0 }`
+   * silenciosamente para um id inexistente, e o service perderia a unica
+   * informacao de que precisa para produzir `404 SPECIES_NOT_FOUND` (RN-14 /
+   * CT-27). O `delete` lanca `P2025` nesse caso, que o service traduz.
+   *
+   * O retorno da linha removida e descartado de proposito (`void`): expo-lo
+   * convidaria alguem a devolver o recurso apagado no corpo de um `204`.
+   */
+  async deleteById(id: string): Promise<void> {
+    await this.db.species.delete({ where: { id } });
   }
 
   withTransaction(executor: Prisma.TransactionClient): SpeciesRepository {
