@@ -29,7 +29,8 @@
 | 006 frontend primitivas de UI | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes (baseline do frontend, intacta) | `148aa31` |
 | 007 frontend sidebar e rotas admin | **concluída** — aprovada na rodada 1; correção visual + rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `c1a17c6` |
 | 008 frontend camada de API e validação | **concluída** — aprovada na rodada 1 (2 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `c2d2167` |
-| 009 frontend tela de espécies (listar/criar) | **concluída** — aprovada na rodada 1 (3 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
+| 009 frontend tela de espécies (listar/criar) | **concluída** — aprovada na rodada 1 (3 minor), corrigida, aprovada na rodada 2 | typecheck exit 0; 12 suítes / 160 testes | `917398c` |
+| 010 frontend edição em linha e exclusão | **concluída** — reprovada na rodada 1 (2 major), aprovada na rodada 2, mais acabamento | typecheck exit 0; 12 suítes / 160 testes | ver `git log` |
 
 **TASK-BACKEND-001** — entregou `schema.prisma` (modelo `Species`), migration `20260826124117_create_species`,
 `species.messages.ts`, `errors/species.errors.ts` e `species-name.ts`. Migration aplicada no Supabase de dev;
@@ -178,6 +179,25 @@ número de sequência (cobre listagem × listagem, que a 010 pode abrir) **mais*
 ocorridas depois da partida da listagem em voo. Reaplicar, e não descartar a resposta obsoleta, porque descartar
 salvaria a espécie criada mas jogaria fora as outras que a listagem trouxe.
 
+**TASK-FRONTEND-010** — edição em linha, diálogo de exclusão e a ligação dos dois com o hook. As duas armadilhas
+antecipadas pela revisão da 009 foram fechadas na primeira tentativa (nada otimista; foco indo para o `<h1>` em vez
+do `<body>` quando a linha que abriu o diálogo desaparece).
+
+**Reprovada na rodada 1** por dois `major` de mesma raiz: `operacaoEmAndamento` era bandeira única para duas
+operações independentes, sem checagem de identidade na resolução. Com um `PATCH` em voo, o `409` que chegava depois
+pintava o erro **sob o campo de outra linha**, e o diálogo de exclusão abria já sem saída pelo teclado. A revisão
+achou pela **assimetria**: a linha já recebia a bandeira estreitada por identidade, o diálogo não.
+
+Corrigido decompondo a bandeira em contador de sessão + duas bandeiras, e separando **efeito de operação**
+(aplicado sempre — descartar jogaria fora gravação durável no servidor) de **efeito de sessão** (só se a sessão
+ainda for a corrente). A comparação por `id` foi recusada com razão: sair de uma linha e voltar a ela produz
+rascunho novo com o mesmo `id`, e a gravação antiga pousaria na sessão errada.
+
+**Acabamento depois da aprovação:** a regra "efeito de operação sempre" é correta entre espécies distintas e
+**se inverte entre duas gravações da mesma espécie** — o comentário a apresentava como universal, e foi isso que
+escondeu o caso. Resolvido com sequência de **escrita** por espécie (o marcador só avança no sucesso: gravação que
+falhou não mudou nada no servidor e não pode barrar o retrato de uma escrita anterior que deu certo).
+
 ## Achados a repassar para tasks futuras
 
 - **TASK-FRONTEND-010 — DUAS ARMADILHAS CONCRETAS, as duas achadas na revisão da 009:**
@@ -191,6 +211,19 @@ salvaria a espécie criada mas jogaria fora as outras que a listagem trouxe.
      excluída**. A linha desmonta no mesmo instante, o `focus()` cai sobre elemento já destacado do DOM e o foco
      vai para o `<body>`: exatamente o defeito que aquele comentário diz evitar. É o primeiro fluxo do projeto em
      que quem abre o diálogo desaparece ao confirmar.
+- **TASK-FRONTEND-011 — os 5 avisos de `act()` NÃO vêm de um arquivo isolado.** As revisões das tasks 009 e 010
+  os atribuíram a `app-routes.spec.tsx` e a `register-page.spec.tsx` respectivamente; **as duas atribuições estão
+  erradas**. Verifiquei: rodado sozinho, `npx jest src/routes/app-routes.spec.tsx` emite **zero** avisos, e
+  `register-page.spec.tsx` também. Eles só aparecem na execução completa da suíte, o que aponta interação entre
+  suítes e não um arquivo culpado. **Diagnostique antes de aplicar a correção sugerida abaixo** — ela pode não ser
+  suficiente.
+- **TASK-FRONTEND-011 — os testes dos dois major da 010 são de CONCORRÊNCIA** e exigem promessa retida em voo; as
+  asserções de foco nos ramos de 404 só são observáveis com a listagem também retida. Um teste sequencial comum
+  passa sem exercitar nada. O cenário do `finally` obsoleto é o que protege a lógica de virar um
+  `setSequenciaEmGravacao(null)` cego numa refatoração futura.
+- **TASK-FRONTEND-011 — o erro do formulário de criação mudou de papel ARIA:** saía `role="status"`/`polite` na 009
+  e agora sai `role="alert"`. Consulte por `role="alert"`. Mudança aceita na revisão (papel semanticamente melhor),
+  texto inalterado.
 - **TASK-FRONTEND-011 — BLOQUEANTE, e é regressão que a 009 causou:** `app-routes.spec.tsx` declara na L31-33 que
   dubla `auth-api` porque "nenhuma requisição pode escapar". A árvore agora monta `SpeciesPage`, que chama
   `species-api` **sem dublê** — a invariante do próprio arquivo deixou de ser cumprida, sustentada só pelo `fetch`
