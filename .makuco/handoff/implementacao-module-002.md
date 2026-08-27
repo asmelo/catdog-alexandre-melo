@@ -56,7 +56,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 |---|---|---|---|
 | 001 backend schema animais/estados/cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 20 suítes / 270 testes | `6e7910f` |
 | 002 backend carga de estados e municípios | **concluída** — 3 rodadas (1 reprovação), aprovada na 3ª | typecheck exit 0; 20 suítes / 270 testes; **27 UFs / 5571 municípios** carregados | `a396314` |
-| 003 backend multipart, limites e assinatura | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; **21 suítes / 282 testes** | ver `git log` |
+| 003 backend multipart, limites e assinatura | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; **21 suítes / 282 testes** | `78359ad` |
+| 004 backend porta de armazenamento + Supabase | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; **24 suítes / 314 testes**; `src/infra/storage` em 100% | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -115,6 +116,19 @@ mitigação é um pré-filtro pelas assinaturas de JPEG/PNG que torna o parser i
 sentidos: não alarga nem estreita a entrada. O bloqueio para subir de versão é **exclusivamente ESM** (a 21.3.1+ já
 está corrigida e aceita Node 20); a saída definitiva é o backend migrar para ESM, não subir de versão.
 `npm audit` segue reportando 1 moderate.
+
+**F2/TASK-BACKEND-004** — `ImageStoragePort`, adaptador do Supabase Storage, gerador de caminho de objeto e duplo
+em memória. `src/infra/storage` em **100%** nas quatro métricas. Nenhum teste abre socket — verificado derrubando
+`net.Socket.prototype.connect`, `tls.connect` e `dns.lookup`: 27/27 passam.
+
+**A dependência que a task prescrevia derrubaria o boot.** `@supabase/supabase-js@2.109` monta um `RealtimeClient`
+que exige WebSocket nativo (Node 22+), contra o `engines: >=20 <21` deste serviço. Reproduzido de forma
+independente pelas duas pontas. **Agravante:** o pacote declara `engines: node >=20.0.0`, então o `npm install`
+**não avisa nada** — a queda só aparece no primeiro import. Trocado por `@supabase/storage-js`, mesmo monorepo,
+mesmo `engines`, sem arrastar o `realtime-js`. **O texto da task foi emendado.**
+
+Erro do fornecedor não vaza para o service: construtor sem parâmetro, e teste assertando que `message` e `code` não
+contêm "Bucket not found", "404" nem "Storage".
 
 ## Decisões fora da spec
 
@@ -293,7 +307,35 @@ rascunho novo com o mesmo `id`, e a gravação antiga pousaria na sessão errada
 escondeu o caso. Resolvido com sequência de **escrita** por espécie (o marcador só avança no sucesso: gravação que
 falhou não mudou nada no servidor e não pode barrar o retrato de uma escrita anterior que deu certo).
 
+## ⚠️ AÇÃO DO DONO DO PROJETO — o backend não sobe sem credencial de armazenamento
+
+A TASK-004 tornou `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` **obrigatórias, sem `.optional()`** — é o que a task
+manda, e é deliberado: um backend que sobe sem credencial de armazenamento só falha no primeiro cadastro com foto,
+em produção. O boot agora cai com mensagem nomeando as chaves faltantes.
+
+**O que está travado até o provisionamento:** `npm run dev`, `npm run db:seed` e `npm run db:seed:geography`.
+**O que NÃO está travado:** a suíte de testes (o `tests/setup.ts` injeta valores de fantasia e nenhum teste abre
+socket) e, portanto, o andamento das tasks.
+
+**Falta também criar o balde `animal-images`** com leitura pública e escrita restrita à service role.
+
+Nenhuma chave foi inventada e o `.env` real não foi tocado; o `.env.example` recebeu placeholder.
+
 ## Achados a repassar para tasks futuras
+
+- **F2/TASK-BACKEND-007 — EXIGÊNCIA DE CONCORRÊNCIA, já emendada no texto da task.** O adaptador tem timeout de
+  **20 s por chamada**. Cinco envios **em série somam 100 s — 3,3× acima dos 30 s do RNF-13**. A implementação óbvia
+  (laço com `await`) estoura o requisito e **nenhum teste barrava**: o aviso vivia só num comentário do adaptador,
+  e o grep na task não achava `paralelo`, `concorrência`, `RNF-13` nem `Promise.all`. Foi acrescentada a exigência
+  explícita mais um critério de aceite que exige teste registrando sobreposição das chamadas.
+  **Interação que a concorrência cria com o CT-55:** é preciso **aguardar o desfecho de todos** os envios
+  disparados antes de compensar — compensar na primeira rejeição deixaria os envios em voo terminarem depois da
+  remoção, cada um virando objeto órfão.
+- **F2/TASK-BACKEND-007 — emendar a justificativa do teste** em `tests/unit/supabase-image-storage.spec.ts`
+  (~L197-207). O nome do teste afirma que estender `TypeError` "impede virar um 415 silencioso" — **não procede na
+  fiação atual**: o adaptador nunca atravessa `traduzirFalhaDaLeitura`, roda depois no handler, e cai no ramo
+  genérico do `error-handler` (500) independentemente do construtor. A asserção continua válida; a justificativa é
+  que está errada. Deixado para a 007 **de propósito**, porque é lá que a rota é montada e a fiação muda.
 
 - **F2/TASK-BACKEND-004 — ARMADILHA DIRETA, herdada da 003.** A tradução de falhas do multipart filtra "defeito de
   programação" por **quatro construtores** (`TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`), não por

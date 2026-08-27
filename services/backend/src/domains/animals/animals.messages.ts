@@ -24,6 +24,9 @@ export const MESSAGES = {
   REQUEST_BODY_TOO_LARGE:
     'O envio ultrapassou o tamanho máximo permitido. Envie menos imagens ou imagens menores.',
 
+  // --- Armazenamento de objetos (RN-38, RN-39) ---
+  IMAGE_STORAGE_UNAVAILABLE: 'Não foi possível salvar as imagens. Tente novamente.',
+
   /**
    * NAO consta da tabela "Mensagens ao Usuario": a spec nao previu texto para um
    * envio que chega com tipo de conteudo diferente de `multipart/form-data`,

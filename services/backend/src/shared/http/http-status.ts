@@ -20,6 +20,12 @@ export const HTTP_STATUS = {
   UNSUPPORTED_MEDIA_TYPE: 415,
   TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
+  /**
+   * RN-39 — dependencia externa da aplicacao indisponivel. Distinto do 500: o
+   * pedido esta correto e a aplicacao esta de pe; o que falhou foi o servico de
+   * armazenamento de objetos, e por isso a mensagem convida a nova tentativa.
+   */
+  SERVICE_UNAVAILABLE: 503,
 } as const;
 
 export type HttpStatus = (typeof HTTP_STATUS)[keyof typeof HTTP_STATUS];

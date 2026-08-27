@@ -96,6 +96,64 @@ describe('config/env', () => {
     });
   });
 
+  it('derruba o boot quando a URL do armazenamento está ausente', async () => {
+    // Arrange — RN-38. Sem `.optional()` de propósito: um backend que sobe sem
+    // credencial de armazenamento só falha no primeiro cadastro COM FOTO, em
+    // produção, já com o administrador esperando.
+    await comAmbiente({ SUPABASE_URL: undefined }, async () => {
+      // Act & Assert
+      await expect(import('~/config/env')).rejects.toThrow(/SUPABASE_URL/);
+    });
+  });
+
+  it('derruba o boot quando a credencial de escrita do armazenamento está ausente', async () => {
+    // Arrange — RNF-04: a `SUPABASE_SERVICE_ROLE_KEY` vive só no servidor, e a
+    // aplicação não sobe sem ela.
+    await comAmbiente({ SUPABASE_SERVICE_ROLE_KEY: undefined }, async () => {
+      // Act & Assert
+      await expect(import('~/config/env')).rejects.toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
+    });
+  });
+
+  it('recusa uma URL de armazenamento malformada em vez de aceitá-la e falhar na rede', async () => {
+    // Arrange
+    await comAmbiente({ SUPABASE_URL: 'projeto.supabase.co' }, async () => {
+      // Act & Assert
+      await expect(import('~/config/env')).rejects.toThrow(
+        /SUPABASE_URL: deve ser uma URL valida/,
+      );
+    });
+  });
+
+  it('nomeia TODAS as variáveis de armazenamento ausentes de uma vez', async () => {
+    // Arrange — descobrir uma variável faltante por reinício custaria uma rodada
+    // de deploy por chave.
+    await comAmbiente(
+      { SUPABASE_URL: undefined, SUPABASE_SERVICE_ROLE_KEY: undefined },
+      async () => {
+        // Act
+        const falha = await import('~/config/env').catch((motivo: unknown) => motivo);
+
+        // Assert
+        const mensagem = falha instanceof Error ? falha.message : '';
+
+        expect(mensagem).toContain('SUPABASE_URL');
+        expect(mensagem).toContain('SUPABASE_SERVICE_ROLE_KEY');
+      },
+    );
+  });
+
+  it('o balde tem default e NÃO derruba o boot quando ausente', async () => {
+    // Arrange — o nome do balde é convenção do projeto, não segredo: ele pode ter
+    // valor padrão sem criar o risco que as outras duas criam.
+    await comAmbiente({ SUPABASE_STORAGE_BUCKET: undefined }, async () => {
+      const { env } = await import('~/config/env');
+
+      // Act & Assert
+      expect(env.SUPABASE_STORAGE_BUCKET).toBe('animal-images');
+    });
+  });
+
   it('aplica os defaults declarados e congela o resultado', async () => {
     // Arrange
     await comAmbiente({ JWT_ACCESS_TTL: undefined, BCRYPT_COST: undefined }, async () => {

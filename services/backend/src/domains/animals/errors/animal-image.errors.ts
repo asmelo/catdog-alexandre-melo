@@ -1,6 +1,7 @@
 import { MESSAGES } from '~/domains/animals/animals.messages';
 import {
   PayloadTooLargeError,
+  ServiceUnavailableError,
   UnsupportedMediaTypeError,
   ValidationError,
 } from '~/shared/errors/http-errors';
@@ -86,5 +87,29 @@ export class MultipartBodyRequiredError extends UnsupportedMediaTypeError {
 export class AnimalImageLimitExceededError extends ValidationError {
   constructor() {
     super(MESSAGES.ANIMAL_IMAGE_LIMIT_EXCEEDED, 'ANIMAL_IMAGE_LIMIT_EXCEEDED');
+  }
+}
+
+/**
+ * RN-39 — o armazenamento de objetos nao aceitou a gravacao (ou a remocao).
+ *
+ * Vive AQUI, com os demais erros de imagem, e nao no arquivo da porta: e assim
+ * que o texto continua morando em `animals.messages.ts` e que o frontend continua
+ * ramificando por `code`. A porta e os seus adaptadores importam esta classe;
+ * o caminho inverso nao existe.
+ *
+ * ESTA CLASSE E A FRONTEIRA DO FORNECEDOR. O `StorageError` do Supabase, o seu
+ * `statusCode` e a sua mensagem em ingles morrem no adaptador: nada disso entra
+ * no construtor, porque nao ha parametro para isso. E o que mantem o dominio
+ * ignorante de qual servico guarda os arquivos — trocar o Supabase por outro
+ * fornecedor nao muda uma linha fora de `src/infra/storage/`.
+ *
+ * 503 e nao 500: o pedido do administrador estava correto e a aplicacao esta de
+ * pe. Quem chama decide o efeito — na gravacao a alteracao e desfeita por inteiro
+ * (RN-39), na remocao a operacao NAO e revertida (RN-40).
+ */
+export class ImageStorageUnavailableError extends ServiceUnavailableError {
+  constructor() {
+    super(MESSAGES.IMAGE_STORAGE_UNAVAILABLE, 'IMAGE_STORAGE_UNAVAILABLE');
   }
 }

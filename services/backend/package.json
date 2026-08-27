@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@supabase/storage-js": "^2.109.0",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

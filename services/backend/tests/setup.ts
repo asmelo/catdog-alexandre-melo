@@ -64,6 +64,25 @@ process.env.MAIL_FROM_NAME = 'CatDog';
 process.env.MAIL_FROM_ADDRESS = 'noreply@catdog.test';
 
 /**
+ * Armazenamento de objetos: valores de FANTASIA, e é isso que se quer.
+ *
+ * As três são obrigatórias em `src/config/env.ts` (RN-38), então sem elas aqui
+ * NENHUMA suíte importaria `env` — e o boot cairia antes do primeiro teste. Elas
+ * existem para satisfazer o schema, e não para funcionar: nenhum teste constrói
+ * o cliente real do Supabase.
+ *
+ * A credencial é literalmente a palavra "chave-de-teste". Colocar aqui a
+ * service role key de verdade a versionaria no repositório — exatamente o que a
+ * RNF-04 proíbe. O que os testes exercitam é o `FakeImageStorage`, que implementa
+ * a `ImageStoragePort` e nunca toca a rede; `SupabaseImageStorage` é exercitado
+ * com um dublê do cliente injetado no construtor, que é o motivo de o cliente ser
+ * injetado e não instanciado lá dentro.
+ */
+process.env.SUPABASE_URL = 'https://projeto-de-teste.supabase.co';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'chave-de-teste-sem-valor-real';
+process.env.SUPABASE_STORAGE_BUCKET = 'animal-images';
+
+/**
  * `SMTP_HOST`, `SMTP_USER` e `SMTP_PASSWORD` ficam DELIBERADAMENTE ausentes.
  *
  * É a garantia estrutural do critério "nenhum teste abre socket de SMTP": mesmo

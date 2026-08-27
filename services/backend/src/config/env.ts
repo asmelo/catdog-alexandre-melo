@@ -41,6 +41,25 @@ const envSchema = z.object({
   DIRECT_URL: z.string().min(1, 'e obrigatoria'),
   CORS_ALLOWED_ORIGINS: listaDeOrigens,
 
+  /**
+   * --- Armazenamento de objetos (RN-38, RNF-04) ---
+   *
+   * OBRIGATORIAS, sem `.optional()`, e a diferenca em relacao ao SMTP acima e
+   * deliberada. O SMTP e opcional porque o backend precisa subir sem conta de
+   * e-mail em desenvolvimento, e a exigencia e verificada em
+   * `createGmailTransport()`. Aqui a escolha e a oposta: um backend que sobe sem
+   * credencial de armazenamento so acusa o problema no primeiro cadastro COM
+   * FOTO, em producao, ja com o administrador esperando. Derrubar o boot nomeando
+   * a variavel faltante troca essa falha tardia por uma falha no deploy.
+   *
+   * `SUPABASE_SERVICE_ROLE_KEY` e credencial de ESCRITA: ela vive apenas aqui, no
+   * servidor, e nao e entregue ao navegador em nenhuma circunstancia (RNF-04,
+   * CA-44). O frontend nao possui — e nao deve possuir — variavel equivalente.
+   */
+  SUPABASE_URL: z.string().url('deve ser uma URL valida'),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'e obrigatoria'),
+  SUPABASE_STORAGE_BUCKET: z.string().min(1, 'e obrigatoria').default('animal-images'),
+
   // --- Declaradas desde ja; consumidas nos slices seguintes ---
   JWT_ACCESS_SECRET: z
     .string()

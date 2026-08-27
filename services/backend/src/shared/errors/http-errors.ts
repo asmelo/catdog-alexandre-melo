@@ -78,6 +78,24 @@ export class UnsupportedMediaTypeError extends AppError {
   }
 }
 
+/**
+ * 503 — dependencia externa da aplicacao indisponivel (RN-39).
+ *
+ * Distinto do 500 DE PROPOSITO, e a distincao e a razao de a classe existir: o
+ * 500 significa defeito de programacao nosso e chega ao cliente com mensagem
+ * generica pelo `error-handler`; o 503 significa que o pedido estava correto e
+ * um servico do qual dependemos falhou, entao ele carrega `code` e mensagem de
+ * negocio proprios e convida a nova tentativa.
+ *
+ * O erro do fornecedor NUNCA vem junto: quem lanca ja traduziu, e nenhum codigo,
+ * mensagem ou status do terceiro atravessa esta fronteira.
+ */
+export class ServiceUnavailableError extends AppError {
+  constructor(message: string, code: string) {
+    super(message, HTTP_STATUS.SERVICE_UNAVAILABLE, code);
+  }
+}
+
 /** `code` unico de toda falha de validacao de entrada. */
 export const VALIDATION_ERROR_CODE = 'VALIDATION_ERROR';
 
