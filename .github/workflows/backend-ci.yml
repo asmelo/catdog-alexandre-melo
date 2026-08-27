@@ -26,18 +26,80 @@ defaults:
 
 jobs:
   build:
-    name: typecheck + build (Node 20)
+    name: typecheck + build + testes (Node 20)
     runs-on: ubuntu-latest
+
+    # ======================= POSTGRES DESCARTAVEL =======================
+    #
+    # A suite `tests/integration/species-animal-integrity.spec.ts` (TASK-BACKEND-010)
+    # quita a divida da FEATURE-001 e so quita porque toca a TABELA real e a
+    # CHAVE ESTRANGEIRA real: um duble ali reproduziria exatamente a lacuna que
+    # ela existe para fechar. Sem banco no CI restariam duas saidas, e as duas
+    # sao piores — pular a suite (devolveria o job verde sem ter medido nada) ou
+    # apontar para o Supabase do projeto (o CI passaria a escrever no banco da
+    # aplicacao, em paralelo com quem estiver desenvolvendo).
+    #
+    # O container e recriado do zero a cada execucao do job, entao nenhum residuo
+    # de uma execucao anterior chega a proxima e nada aqui toca banco de gente.
+    #
+    # Versao 17 por ser a mesma familia do Postgres gerenciado do projeto
+    # (17.6 no Supabase, conferido em `version()`): o CT-85 depende do
+    # comportamento de bloqueio de linha (`FOR KEY SHARE`) e da verificacao de
+    # integridade referencial, e nao faz sentido medi-los em outra versao.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: catdog
+          POSTGRES_PASSWORD: catdog
+          POSTGRES_DB: catdog_ci
+        ports:
+          - 5432:5432
+        # Sem o health-check o job seguiria para o `migrate deploy` antes de o
+        # servidor aceitar conexao, e falharia por corrida de partida — nao por
+        # defeito no codigo.
+        options: >-
+          --health-cmd "pg_isready -U catdog -d catdog_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     env:
       # `prisma validate` resolve os `env()` do datasource em tempo de parse e
       # falha com P1012 ("Environment variable not found: DIRECT_URL") se as
-      # variaveis nao existirem. Os valores abaixo sao DUMMY e servem apenas
-      # para satisfazer o parser: nenhum passo deste workflow abre conexao com
-      # banco. As portas espelham o contrato do Supabase (6543 pooler / 5432
-      # direta) para que o formato validado seja o mesmo usado em execucao.
-      DATABASE_URL: postgresql://ci:ci@localhost:6543/ci?pgbouncer=true&connection_limit=1
-      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      # variaveis nao existirem. Diferentemente da versao anterior deste
+      # workflow, agora elas NAO sao de fantasia: apontam para o servico acima,
+      # porque `prisma migrate deploy` e a carga de geografia abrem conexao de
+      # verdade. O Postgres local nao tem pooler, entao as duas URLs sao a mesma
+      # porta 5432 — no Supabase elas diferem (6543 pooler / 5432 direta).
+      DATABASE_URL: postgresql://catdog:catdog@localhost:5432/catdog_ci?schema=public
+      DIRECT_URL: postgresql://catdog:catdog@localhost:5432/catdog_ci?schema=public
+
+      # Origem da suite de integridade, lida por `tests/helpers/banco-real.ts`.
+      #
+      # CHAVE PROPRIA, e nao `DATABASE_URL`, porque `tests/setup.ts` sobrescreve
+      # `DATABASE_URL` com um endereco morto de proposito — e essa protecao, que
+      # mantem as outras 24 suites longe da rede, nao pode ser afrouxada para
+      # acomodar o CI.
+      #
+      # `connection_limit=1` ESPELHA o pooler do Supabase usado em
+      # desenvolvimento. O limite e a razao de a suite abrir sessoes proprias
+      # para o CT-85 em vez de reaproveitar o cliente da aplicacao; com um pool
+      # folgado no CI, um comando concorrente indevido passaria aqui e falharia
+      # so na maquina de quem desenvolve.
+      DATABASE_URL_INTEGRATION: postgresql://catdog:catdog@localhost:5432/catdog_ci?schema=public&connection_limit=1
+
+      # Exigidas por `src/config/env.ts`, que valida o ambiente no import e
+      # derruba o boot se faltar alguma. Sao consumidas apenas pela carga de
+      # geografia (que importa o cliente Prisma compartilhado); a suite de testes
+      # nao as le — quem define o ambiente dela e `tests/setup.ts`. Todos os
+      # valores sao SEM VALOR REAL: nenhum passo abre SMTP nem fala com o
+      # armazenamento de objetos.
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+      JWT_ACCESS_SECRET: segredo-de-ci-deterministico-com-mais-de-32-caracteres
+      SUPABASE_URL: https://projeto-de-ci.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: chave-de-ci-sem-valor-real
+      SUPABASE_STORAGE_BUCKET: animal-images
 
     steps:
       - name: Checkout
@@ -69,20 +131,44 @@ jobs:
       - name: Gera o Prisma Client
         run: npx prisma generate
 
+      # Antes dos passos de banco de proposito: sao os gates baratos, e um erro
+      # de tipo nao deve esperar por uma carga de 5.571 municipios para aparecer.
       - name: Typecheck
         run: npm run typecheck
 
       - name: Build
         run: npm run build
 
-      # Passo preparado para a TASK-BACKEND-007. Enquanto nao existir o script
-      # `test` no package.json, registra um aviso visivel no resumo do job em
-      # vez de passar em silencio; assim que a suite for adicionada, passa a
-      # executa-la automaticamente, sem editar este workflow.
+      # `migrate deploy` e nao `migrate dev`: aplica as migrations JA versionadas
+      # e nunca gera nem edita nenhuma. Um schema alterado sem a migration
+      # correspondente faz este passo divergir do `prisma/migrations/`, e e assim
+      # que o CI acusa a omissao.
+      #
+      # E daqui que sai a chave estrangeira que o CT-85 mede: se alguem recriar
+      # `animals_species_id_fkey` como `Cascade` ou `SetNull`, a suite reprova.
+      - name: Aplica as migrations no Postgres descartavel
+        run: npx prisma migrate deploy
+
+      # `db:seed:geography` e NAO `db:seed`.
+      #
+      # O gancho `prisma.seed` do `package.json` esta ocupado pelo
+      # provisionamento do administrador, que e deliberadamente AUTORITATIVO:
+      # reescreve `passwordHash`, `role`, `status` e `emailConfirmedAt` da linha
+      # existente em `users`. Isso e certo para provisionar acesso e errado como
+      # efeito colateral de preparar um banco de teste — e e por isso que o
+      # projeto mantem o gatilho dedicado so da geografia.
+      #
+      # A suite precisa dele porque `beforeAll` exige `states` semeada (ela cria
+      # a propria cidade, mas nao a propria unidade federativa) e falha alto com
+      # "O recorte do IBGE nao esta semeado" se a tabela estiver vazia.
+      - name: Semeia estados e municipios (sem tocar no administrador)
+        run: npm run db:seed:geography
+
+      # `npm test` sem condicional: o script existe desde a TASK-BACKEND-007 e a
+      # suite e obrigatoria. A versao anterior deste passo pulava os testes em
+      # silencio quando `scripts.test` nao existia — util enquanto a suite estava
+      # por vir, e hoje apenas um caminho para o job ficar verde sem ter medido
+      # nada. Se o banco do servico acima sumir, `tests/helpers/banco-real.ts`
+      # lanca no primeiro import e o job fica VERMELHO, que e o desfecho correto.
       - name: Testes
-        run: |
-          if [ "$(npm pkg get scripts.test)" = '{}' ]; then
-            echo "::notice title=Testes pendentes::Nenhum script 'test' em services/backend/package.json — suite automatizada prevista na TASK-BACKEND-007. Cobertura atual: 0%."
-          else
-            npm test
-          fi
+        run: npm test

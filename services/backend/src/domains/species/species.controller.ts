@@ -161,14 +161,12 @@ export function createSpeciesController(
 
   /**
    * Porta SEPARADA do repositorio de especies (segregacao de interfaces): a
-   * contagem de animais pertence ao agregado Animal. A implementacao de hoje
-   * responde `0` sem consultar o banco, porque a tabela `animals` ainda nao
-   * existe — ver o `TODO` de `species-usage-counter.ts`, que amarra a troca a
-   * feature seguinte do MODULE-002.
+   * contagem de animais pertence ao agregado Animal. Desde a TASK-BACKEND-010
+   * da FEATURE-002 ela consulta a tabela real (`animal.count`).
    *
-   * O `prisma` global e passado mesmo assim: e ele que o `withTransaction` vai
-   * substituir pelo `tx` dentro do service, e passa-lo agora deixa a troca da
-   * feature seguinte contida naquele arquivo.
+   * O `prisma` global e o que ela recebe aqui, mas NAO e o que ela usa na
+   * exclusao: dentro do service o `withTransaction(tx)` devolve outra instancia,
+   * ligada a transacao — e e essa que conta (RN-09).
    */
   const speciesUsage = new PrismaSpeciesUsageCounter(prisma);
 

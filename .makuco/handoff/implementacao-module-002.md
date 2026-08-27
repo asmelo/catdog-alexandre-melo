@@ -62,7 +62,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 | 006 backend leitura de animais, paginação e idade | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 24 suítes / 314 testes | `febeb92` |
 | 007 backend criação de animal com upload | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `eba537f` |
 | 008 backend edição com trava otimista | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `b0a7581` |
-| 009 backend status e exclusão | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
+| 009 backend status e exclusão | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `adf8622` |
+| 010 backend integridade — **QUITA A DÍVIDA** | **concluída** — reprovada na rodada 1 (2 major), aprovada na rodada 2 | typecheck exit 0; **25 suítes / 323 testes** | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -159,7 +160,52 @@ mora numa porta própria, `repositories/species-usage-counter.ts`, que **hoje de
 entidade `Animal` ainda não existe. Ordem dentro da transação: `findById` (404) → `countAnimalsBySpecies` (409) →
 `deleteById` como última operação, com `catch` traduzindo `P2003` → `SpeciesInUseError` e `P2025` → `SpeciesNotFoundError`.
 
-## A dívida que a TASK-010 da feature de animais tem que quitar
+## ✅ A DÍVIDA FOI QUITADA — F2/TASK-BACKEND-010, 2026-08-27
+
+**Integralmente, e provada por mutação.** Não sobrou nenhum critério desta task apoiado em dublê ou incapaz de
+ficar vermelho.
+
+As quatro edições do contador foram aplicadas (a contagem agora é `this.db.animal.count(...)` e a constante órfã
+sumiu). Criada `tests/integration/species-animal-integrity.spec.ts` com 9 casos **contra o banco real**, e
+`tests/helpers/banco-real.ts`. CT-81→24, CT-82→25, CT-83→26, CT-84→32: correspondência **um para um e completa**,
+reauditada contra a spec da FEATURE-001.
+
+**Provas que sustentam a quitação:**
+- Apontar `DATABASE_URL` para endereço morto faz a suíte **falhar alto**, não pular.
+- **A FK é afirmada pelo NOME da constraint**: renomeá-la reprova; recriá-la como `Cascade` reprova.
+- Os quatro mutantes do contador morrem, inclusive o de "nova instância ligada ao client global".
+- O mutante da camada 2 (`violaChaveEstrangeira → false`) morre **13/13** — 6 em Postgres local, 3 sob latência
+  artificial de 250 ms, e **4 contra o mesmo Supabase onde a rodada 1 o vira passar verde**.
+- O mutante **inverso** (sem camada 1, com camada 2) fica **verde 3/3**: o caso é **específico**.
+
+**O que a rodada 1 pegou, e é a lição mais cara do módulo:** o caso que provava a tradução do `P2003` para `409`
+era um **FALSO VERDE**. Passava, tinha nome descritivo, tocava o banco real, e estava dentro da task criada para
+eliminar dublês — mas media a camada errada. Removendo a camada 2 da produção, passava 4/4. **Não era flaky; era
+incapaz de ficar vermelho pelo motivo que anunciava.**
+
+Causa raiz, mais profunda que as pausas: **`request(app).delete(...)` do supertest devolve um thenable preguiçoso**
+— a requisição só parte quando alguém chama `.then()`. Guardada numa variável e aguardada no fim, ela saía **depois**
+do commit da sessão paralela. Nenhum ajuste de tempo teria consertado. Corrigido com **condições observadas**
+(`FOR UPDATE NOWAIT` na linha da espécie devolvendo `55P03`; `pg_stat_activity` com o `DELETE` em
+`wait_event_type='Lock'`) e asserção positiva. **`pg_locks` não serve** para a condição 1: bloqueio de linha vive no
+cabeçalho da tupla, e o catálogo só mostra o `RowShareLock` da relação.
+
+**Criado `.makuco/codebase/technical-debt.md`** (149 linhas), referenciado no `MAKUCO.md`:
+- **DT-01 — QUITADA:** esta dívida, com o método de verificação registrado.
+- **DT-02 — PREVENTIVA, registrada ANTES de ser contraída:** a FK Pedido→Animal nasce `onDelete: Restrict`; jamais
+  `Cascade` (apagaria histórico de negócio), jamais `SetNull` (pedido que não descreve nada). Verificação contra
+  dados reais, não dublê. **O módulo de Pedidos não pode ser considerado concluído sem isso.**
+- **DT-03 — ABERTA:** o `chave in forma` de `auth.validators.ts`, auditado e confirmado verdadeiro.
+
+**Também corrigido:** o CI quebraria no próximo PR (o helper lia o **arquivo** `.env`, gitignored e inexistente no
+CI). Resolvido com `DATABASE_URL_INTEGRATION` e Postgres descartável no workflow — **sem `describe.skip`**, que
+devolveria a suíte verde sem tocar banco, exatamente como a dívida voltaria a ficar aberta com aparência de quitada.
+
+**Ainda sobre dublê, e NÃO é dívida desta task:** o ramo `P2025` de `delete-species.service.ts` (outra sessão exclui
+a espécie entre o `findById` e o `DELETE`) é coberto só por dublê. Pertence à RN-14/CT-27 da FEATURE-001, não à
+regra de vínculo. Fica nomeado para não ser descoberto por acidente.
+
+## Registro histórico — a dívida como estava antes de ser quitada
 
 Está contraída e documentada em `services/backend/src/domains/species/repositories/species-usage-counter.ts`.
 São **quatro** edições, todas contidas nesse arquivo (a lista saiu com três na primeira versão; o quarto item foi
@@ -441,6 +487,13 @@ não reintroduza o erro:
    **a seção de implementação reprovaria o critério de aceite do mesmo documento** — F2/TASK-005.
 
 ## Achados a repassar para tasks futuras
+
+- **A suíte de integridade escreve no banco de desenvolvimento compartilhado.** Duas execuções **simultâneas**
+  colidem — rode uma de cada vez localmente. Dois `jest` sobrepostos já corromperam uma execução. No CI não há
+  problema: cada job tem Postgres próprio. A exclusão mútua (via `ibge_code` único) é **tardia**: a segunda execução
+  apaga o resíduo da primeira antes de falhar, então ela impede a segunda de terminar, não de atrapalhar a primeira.
+- **`npm test` agora leva ~110 s** (as 24 suítes antigas rodam em ~8 s; a de integridade responde pelo resto),
+  porque toca o banco real através do pooler com `connection_limit=1`.
 
 - **A numeração de RNF é POR FEATURE.** Um agente diagnosticou errado que `species.validators.ts:97` citava a RNF
   errada — na FEATURE-001 a RNF-12 **é** "Idioma — mensagens em PT-BR", e a citação está correta. Na FEATURE-002 a

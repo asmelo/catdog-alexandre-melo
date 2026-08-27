@@ -49,9 +49,12 @@ export interface DeleteSpeciesInput {
 }
 
 /**
- * `P2003` — violacao de chave estrangeira. Hoje NUNCA acontece: a tabela
- * `animals` nao existe e nada referencia `species`. Passa a ocorrer quando a FK
- * restritiva nascer, na feature seguinte do modulo.
+ * `P2003` — violacao de chave estrangeira. Desde a FEATURE-002 do MODULE-002
+ * este ramo e ALCANCAVEL em producao: a tabela `animals` existe e a FK
+ * `animals_species_id_fkey` esta declarada com `ON DELETE RESTRICT`, entao o
+ * Postgres recusa a exclusao com `23503` e o Prisma a reporta como `P2003`.
+ * Exercitado contra o banco real pelo CT-85 de
+ * `tests/integration/species-animal-integrity.spec.ts`.
  */
 function violaChaveEstrangeira(motivo: unknown): boolean {
   return motivo instanceof Prisma.PrismaClientKnownRequestError && motivo.code === 'P2003';

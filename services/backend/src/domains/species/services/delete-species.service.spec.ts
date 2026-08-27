@@ -27,30 +27,31 @@ import { proximoUuid, reiniciarSequenciaDeUuid } from '../../../../tests/fakes/r
  *
  * ================== O QUE ESTA SOBRE DUBLE, E POR QUE ==================
  *
- * A entidade `Animal` NAO EXISTE. Nao ha tabela `animals`, nao ha chave
- * estrangeira `animals.species_id` e o `@prisma/client` gerado nao exporta o
- * modelo. Isso significa que, hoje, NENHUM dado real e capaz de produzir os dois
- * desfechos centrais desta feature:
+ * Este arquivo mede o SERVICE: a ordem das verificacoes, o desfecho de cada
+ * ramo, o `code` e a mensagem de cada erro, e o fato de o erro ser lancado de
+ * DENTRO da transacao. Para isso os dois colaboradores continuam dublados, e
+ * continuam dublados DE PROPOSITO, mesmo agora que a entidade Animal existe:
  *
- *   - CAMADA 1 da RN-09 (a verificacao da aplicacao): `PrismaSpeciesUsageCounter`
- *     devolve `0` sem tocar o banco. Nao existe estado de banco que a faca
- *     devolver outra coisa. Coberta aqui pelo `FakeSpeciesUsageCounter`, que e
- *     exatamente a porta declarada pelo service.
- *   - CAMADA 2 da RN-09 (a integridade referencial): o `P2003` e literalmente
- *     inalcancavel — nao ha constraint que possa ser violada. Coberta aqui por um
- *     repositorio que rejeita com `PrismaClientKnownRequestError` de codigo
- *     `P2003`, no formato exato que o Prisma produz.
+ *   - CAMADA 1 da RN-09 (a verificacao da aplicacao): coberta pelo
+ *     `FakeSpeciesUsageCounter`, que e exatamente a porta declarada pelo
+ *     service. Montar "9999 animais vinculados" ou "a contagem falhou" com
+ *     dados reais acoplaria a exclusao de ESPECIE as regras de cadastro de
+ *     ANIMAL, que sao de outro caso de uso e mudam por outros motivos.
+ *   - CAMADA 2 da RN-09 (a integridade referencial): coberta por um repositorio
+ *     que rejeita com `PrismaClientKnownRequestError` de codigo `P2003`, no
+ *     formato exato que o Prisma produz.
  *
- * A alternativa seria criar a tabela `animals` so para testar, o que anteciparia
- * uma decisao de modelagem da feature seguinte e criaria uma migration orfa.
- * A spec resolve isso de forma explicita: a TASK-010 da feature de Cadastro de
- * pets REEXECUTA CT-24, CT-25, CT-26 e CT-32 contra a tabela e a constraint
- * reais. Ate la, a RN-08 esta verificada apenas por duble — risco residual ja
- * registrado na spec, no changelog e no `TODO` de `species-usage-counter.ts`.
+ * O QUE MUDOU: ate a TASK-BACKEND-010 da FEATURE-002, o duble era a UNICA forma
+ * de verificar a RN-08 — a tabela `animals` nao existia e o `P2003` era
+ * literalmente inalcancavel. Essa divida foi QUITADA: a tabela existe, a chave
+ * estrangeira `animals.species_id` existe com `ON DELETE RESTRICT`, e os casos
+ * CT-24, CT-25, CT-26 e CT-32 foram REEXECUTADOS contra dados reais em
+ * `tests/integration/species-animal-integrity.spec.ts` (CT-81 a CT-86).
  *
- * O que NAO esta sobre duble: a ordem das verificacoes, o desfecho de cada ramo,
- * o `code` e a mensagem de cada erro, e o fato de o erro ser lancado de DENTRO da
- * transacao. Esses sao codigo de producao rodando de verdade.
+ * O duble aqui deixou entao de ser substituto e voltou a ser escolha: rapido,
+ * determinista e sem rede para as regras do service — com a verificacao contra o
+ * Postgres de verdade morando na suite de integracao, e nao mais em aberto.
+ * Registro em `.makuco/codebase/technical-debt.md`.
  */
 
 /**
@@ -325,38 +326,70 @@ describe('DeleteSpeciesService', () => {
 });
 
 /**
- * A implementacao PROVISORIA da contagem. Ela e o colaborador que hoje mantem a
- * RN-08 desarmada em producao, e o teste existe para fixar por escrito o
- * comportamento que a feature seguinte vai substituir — de modo que a troca
- * apareca como FALHA aqui, e nao como uma mudanca silenciosa.
+ * A implementacao REAL da contagem (TASK-BACKEND-010 da FEATURE-002).
+ *
+ * Ate a entidade Animal existir, este bloco fixava por escrito o comportamento
+ * provisorio — `0` sem tocar o banco — justamente para que a troca aparecesse
+ * como FALHA aqui, e nao como uma mudanca silenciosa. Ela apareceu: os dois
+ * casos reprovaram no exato commit que apontou a contagem a tabela real, que e o
+ * desfecho que aquele bloco existia para produzir.
+ *
+ * Os casos NAO foram afrouxados para voltar ao verde — foram REESCRITOS uma
+ * altura acima. Antes verificavam um valor constante; agora verificam a
+ * DELEGACAO: qual comando e emitido, com qual filtro e sobre qual conexao. A
+ * segunda pergunta e a que interessa a RN-09, e a versao anterior nao tinha como
+ * fazer, porque um corpo que ignora o client responde igual nas duas conexoes.
+ *
+ * A verificacao contra o Postgres de verdade — tabela, chave estrangeira e
+ * `23503` — e a suite `tests/integration/species-animal-integrity.spec.ts`
+ * (CT-81 a CT-86). Aqui o duble de client e proposital: o que se mede e o
+ * contrato com o Prisma, sem rede.
  */
-describe('PrismaSpeciesUsageCounter (implementação provisória)', () => {
-  it('RN-08: responde 0 para qualquer espécie, sem emitir consulta ao banco', async () => {
-    // Arrange — a tabela `animals` não existe; qualquer `SELECT` sobre ela
-    // derrubaria a exclusão de espécie, que hoje é operação legítima.
+describe('PrismaSpeciesUsageCounter', () => {
+  /** Contagem qualquer diferente de zero: o valor so precisa ser repassado. */
+  const ANIMAIS_VINCULADOS = 3;
+
+  it('RN-08: delega a `animal.count` filtrando pela espécie e devolve o número do banco', async () => {
+    // Arrange — a contagem agora CONSULTA. O que se fixa aqui é o comando
+    // emitido: `count` sobre `animal`, filtrado por `speciesId`. Um `findMany`
+    // contado em memória, ou um filtro em outra coluna, reprova.
     const cliente = criarPrismaComTransacao();
+    const especieId = proximoUuid();
+    cliente.animal.count.mockResolvedValue(ANIMAIS_VINCULADOS);
     const contagem = new PrismaSpeciesUsageCounter(cliente);
 
     // Act
-    const vinculados = await contagem.countAnimalsBySpecies(proximoUuid());
+    const vinculados = await contagem.countAnimalsBySpecies(especieId);
 
     // Assert
-    expect(vinculados).toBe(0);
+    expect(vinculados).toBe(ANIMAIS_VINCULADOS);
+    expect(cliente.animal.count).toHaveBeenCalledTimes(1);
+    expect(cliente.animal.count).toHaveBeenCalledWith({ where: { speciesId: especieId } });
   });
 
-  it('RN-09: `withTransaction` devolve uma instância NOVA, ligada ao executor recebido', async () => {
-    // Arrange — devolver `this` seria a armadilha: a contagem real da feature
-    // seguinte passaria a rodar FORA da transação do service sem que nada
-    // precisasse mudar, e a atomicidade da RN-09 seria só aparente.
+  it('RN-09: `withTransaction` devolve instância NOVA e a contagem sai pelo executor, não pelo cliente global', async () => {
+    // Arrange — devolver `this` era a armadilha anunciada pelo bloco anterior:
+    // a contagem real passaria a rodar FORA da transação do service sem que
+    // nada precisasse mudar, e a atomicidade da RN-09 seria só aparente. Com a
+    // contagem consultando de verdade, a armadilha finalmente é observável —
+    // basta perguntar qual das duas conexões recebeu o comando.
     const cliente = criarPrismaComTransacao();
+    const executor = executorDaTransacaoDe(cliente);
+    const especieId = proximoUuid();
+    executor.animal.count.mockResolvedValue(ANIMAIS_VINCULADOS);
     const contagem = new PrismaSpeciesUsageCounter(cliente);
 
     // Act
-    const naTransacao = contagem.withTransaction(cliente);
+    const naTransacao = contagem.withTransaction(executor);
+    const vinculados = await naTransacao.countAnimalsBySpecies(especieId);
 
     // Assert
     expect(naTransacao).toBeInstanceOf(PrismaSpeciesUsageCounter);
     expect(naTransacao).not.toBe(contagem);
-    await expect(naTransacao.countAnimalsBySpecies(proximoUuid())).resolves.toBe(0);
+    expect(vinculados).toBe(ANIMAIS_VINCULADOS);
+    expect(executor.animal.count).toHaveBeenCalledWith({ where: { speciesId: especieId } });
+    // O cliente global NÃO pode ter sido consultado: é esta asserção, e não a
+    // identidade da instância, que reprova uma contagem fora da transação.
+    expect(cliente.animal.count).not.toHaveBeenCalled();
   });
 });
