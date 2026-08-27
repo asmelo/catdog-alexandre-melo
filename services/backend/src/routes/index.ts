@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 
+import { animalsRoutes } from '~/domains/animals/animals.routes';
 import { authRoutes } from '~/domains/auth/auth.routes';
 import { geographyRoutes } from '~/domains/geography/geography.routes';
 import { speciesRoutes } from '~/domains/species/species.routes';
@@ -19,3 +20,4 @@ router.get('/health', (_requisicao: Request, resposta: Response) => {
 router.use('/auth', authRoutes);
 router.use('/species', speciesRoutes);
 router.use('/states', geographyRoutes);
+router.use('/animals', animalsRoutes);

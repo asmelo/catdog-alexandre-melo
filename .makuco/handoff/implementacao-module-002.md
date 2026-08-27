@@ -58,7 +58,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 | 002 backend carga de estados e municípios | **concluída** — 3 rodadas (1 reprovação), aprovada na 3ª | typecheck exit 0; 20 suítes / 270 testes; **27 UFs / 5571 municípios** carregados | `a396314` |
 | 003 backend multipart, limites e assinatura | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; **21 suítes / 282 testes** | `78359ad` |
 | 004 backend porta de armazenamento + Supabase | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; **24 suítes / 314 testes**; `src/infra/storage` em 100% | `0445a29` |
-| 005 backend endpoints de estados e cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
+| 005 backend endpoints de estados e cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `4e799d3` |
+| 006 backend leitura de animais, paginação e idade | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -322,6 +323,32 @@ reintroduziria a comparação binária que o banco já evita.
 para quem introduzir busca de município. Registro do que importa: o índice é `(stateId, name)` sobre a coluna
 **acentuada**, então um `unaccent` futuro **não** o usaria.
 
+**F2/TASK-BACKEND-006** — `GET /api/animals` (paginado) e `GET /api/animals/:id`, com repositório, mapper,
+validadores, dois services, controller e rotas, mais `src/utils/age.ts`.
+
+**A armadilha do `nameNormalized` foi respeitada:** zero `normalize(`/`NFD`/`deburr`, zero `sort()`, zero
+`localeCompare`, e a coluna só aparece como chave de `orderBy` — nunca em `where`, nunca em `findUnique`. O aviso
+está registrado no repositório e no `schema.prisma`.
+
+**A task prescrevia um cálculo de idade ERRADO** — confirmado por execução contra o banco. Ela manda tratar
+`birthDate` como data civil no fuso de São Paulo, mas a coluna é `@db.Date` e chega como **meia-noite UTC**:
+converter devolveria o dia anterior, e a idade viraria **um ano mais cedo todo 31/12**, passando despercebida nos
+outros 364 dias. Implementada a assimetria (`now` por `Intl` no fuso; `birthDate` por `getUTC*`) e **o texto da
+task foi emendado**, para que a próxima fatia não "corrija" o código certo para a prescrição errada.
+
+**Reprovada na rodada 1:** `?page=abc` devolvia `"Expected number, received nan"` **em inglês**. O `superRefine`
+só roda depois que o tipo base passa, e `Number('abc')` é `NaN` — reprovado antes, tornando o ramo inalcançável.
+Corrigido com `invalid_type_error` no tipo base; a mesma linha fechou **quatro caminhos adicionais** em inglês que
+a revisão não tinha listado. A rodada 2 varreu ~61 formas de query e 7 de `:id`: nenhum texto em inglês restou.
+
+**Acabamento:** `?page=1e19` respondia **500** — o `skip` estourava o inteiro de 64 bits. Resolvido **saturando o
+`skip`**, e não pondo teto em `page`: o teto mudaria a regra declarada de que página além do total responde `200`
+com lista vazia, e desenharia a fronteira num detalhe de armazenamento em vez de numa regra de negócio.
+
+Verificações da revisão que valem registro: 500 animais percorridos em 25 páginas por HTTP com **500 ids
+distintos**, `EXPLAIN` do plano real, e log do Prisma confirmando `BEGIN → findMany → COUNT → COMMIT` através do
+pgbouncer.
+
 ## ⚠️ AÇÃO DO DONO DO PROJETO — o backend não sobe sem credencial de armazenamento
 
 A TASK-004 tornou `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` **obrigatórias, sem `.optional()`** — é o que a task
@@ -348,6 +375,15 @@ não reintroduza o erro:
    **a seção de implementação reprovaria o critério de aceite do mesmo documento** — F2/TASK-005.
 
 ## Achados a repassar para tasks futuras
+
+- **A numeração de RNF é POR FEATURE.** Um agente diagnosticou errado que `species.validators.ts:97` citava a RNF
+  errada — na FEATURE-001 a RNF-12 **é** "Idioma — mensagens em PT-BR", e a citação está correta. Na FEATURE-002 a
+  equivalente é a RNF-22. Não "unifique" essas citações.
+- **F2/TASK-BACKEND-011 — `tests/fakes/prisma-double.ts` não conhece os delegates `animal`, `state` nem `city`.**
+  Ou estende o duplo, ou injeta pelas fábricas `createAnimalsController` / `createGeographyController`. **Armadilha
+  do segundo caminho:** a fábrica roda no import das rotas, então o duplo precisa ser *function declaration*
+  hoisted, não `class` declarada depois do `import { app }`.
+- **F2/TASK-BACKEND-011 — o `?page=1e19` NÃO responde mais 500**, então não escreva teste esperando isso.
 
 - **F2/TASK-BACKEND-011 — `tests/fakes/prisma-double.ts` não tem os modelos `state` nem `city`.** Ou estende o
   duplo, ou injeta pelo parâmetro `dependencias?` da fábrica. **Armadilha do segundo caminho (já provada):** a
