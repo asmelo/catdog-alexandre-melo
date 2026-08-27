@@ -54,7 +54,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 
 | Task | Status | Testes | Commit |
 |---|---|---|---|
-| 001 backend schema animais/estados/cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 20 suítes / 270 testes | ver `git log` |
+| 001 backend schema animais/estados/cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 20 suítes / 270 testes | `6e7910f` |
+| 002 backend carga de estados e municípios | **concluída** — 3 rodadas (1 reprovação), aprovada na 3ª | typecheck exit 0; 20 suítes / 270 testes; **27 UFs / 5571 municípios** carregados | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -68,6 +69,26 @@ contra o que rodar.**
 
 Armadilha do RN-05 evitada: `animals.name_normalized` **não** é único (dois animais podem ter o mesmo nome), ao
 contrário do de espécies. Nenhum índice único sobre a coluna.
+
+**F2/TASK-BACKEND-002** — carga de 27 UFs e 5571 municípios a partir de recorte versionado (321 KB), sem nenhuma
+chamada HTTP. Idempotente: casa por `ibgeCode`, corrige por `update` preservando o `id`, e a segunda execução emite
+dois `SELECT` e zero escritas. Validação Zod derruba a carga **antes** de qualquer escrita se o recorte vier
+truncado — provado adulterando uma cidade no banco e confirmando que ela continuou adulterada após o abort.
+
+**Dois gatilhos, por causa do gancho ocupado:** `seedGeography` é chamada pelo `prisma/seed.ts`, e existe também um
+`npm run db:seed:geography` dedicado, protegido por `require.main`. Sem o segundo, atualizar o recorte municipal
+obrigaria a reescrever a conta do administrador junto.
+
+**Bug corrigido:** a falha do seed do admin impedia a geografia de rodar — em CI, `npm run db:seed` deixaria
+`states` e `cities` vazias, bloqueando as tasks 005 e 007. As cargas passaram a ser isoladas, sem engolir erro:
+cada falha é nomeada em `stderr` e o processo termina com saída diferente de zero.
+
+**Reprovada na rodada 2 — a correção de concorrência era INERTE.** O lote de 25 foi calibrado contra o
+`pool_timeout` de 10 s **ignorando o `connection_limit=1` da mesma string de conexão**. Com uma conexão,
+concorrência não divide a espera, **multiplica**: medido ~880-930 ms por `update`, então o 25º comando espera ~22 s
+contra um teto de 10. Lotes de 25 e de 1.000 quebram no mesmo ponto — verificado por experimento independente com
+`pg_sleep` (25 concorrentes → 6 sucessos; 200 concorrentes → 6 sucessos; em série → 25 de 25). **Resolvido
+serializando** (`for … await`). Custa ~1 s por município renomeado e conclui inteiro, em vez de abortar na metade.
 
 ## Decisões fora da spec
 
@@ -248,6 +269,20 @@ falhou não mudou nada no servidor e não pode barrar o retrato de uma escrita a
 
 ## Achados a repassar para tasks futuras
 
+- **F2/TASK-BACKEND-005 — nomes de município SE REPETEM entre UFs** (`Boa Esperança` existe em ES, MG e PR). A
+  listagem precisa ser escopada por estado, e nenhuma busca pode assumir unicidade de nome — o índice
+  `@@index([stateId, name])` existe para isso. O DF tem município (`Brasília`, 5300108). Os nomes têm acentuação
+  oficial, então filtro por texto precisa **decidir explicitamente** se é sensível a acento.
+- **F2/TASK-BACKEND-011 — o teste mais importante do seed é o de SERIALIZAÇÃO.** Um `Promise.all` reintroduzido
+  passa em qualquer teste funcional e só quebra em volume; o modo de detectar é **contar escritas em voo** (máximo
+  tem que ser 1). Cobrir também: loteamento do `createMany` em 1.000, contadores vindos do `count` real, Zod
+  abortando antes do primeiro comando, idempotência, `update` preservando `id`, e resolução por `__dirname`.
+  `collectCoverageFrom` precisa ganhar `prisma/seeds/**/*.ts`. Os testes **não devem escrever no Supabase real** —
+  cada escrita custa ~880 ms medidos.
+- **Simular ausência de variável de ambiente: `DOTENV_CONFIG_PATH` NÃO basta.** O `@prisma/client` carrega o `.env`
+  vizinho ao schema por conta própria e repõe os valores antes de `src/config/env.ts` rodar. O único jeito fiel é
+  trocar o próprio `.env` — e restaurá-lo depois, conferindo por md5. Vale para a TASK-004, que introduz as
+  variáveis do Supabase Storage.
 - **F2/TASK-BACKEND-002 — o gancho `prisma.seed` JÁ ESTÁ OCUPADO.** `package.json` registra `prisma.seed` apontando
   para `prisma/seed.ts`, que faz `upsert` do administrador reescrevendo `passwordHash`, `role`, `status` e
   `emailConfirmedAt`. **A carga de estados e municípios não pode ser pendurada nele sem pensar.** Foi por isso que a

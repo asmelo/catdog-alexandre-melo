@@ -5,6 +5,28 @@ import { prisma } from '~/infra/prisma/prisma-client';
 import { now } from '~/utils/clock';
 import { hashPassword } from '~/utils/password-hasher';
 
+import { seedGeography } from './seeds/geography.seed';
+
+/**
+ * Gancho `prisma.seed` do `package.json` (`npm run db:seed`). Executa DUAS
+ * cargas independentes, em sequencia e sem dependencia entre si:
+ *
+ *   1. o provisionamento do administrador unico, descrito abaixo;
+ *   2. a carga de estados e municipios (`seedGeography`), a partir do recorte
+ *      oficial do IBGE embarcado no repositorio.
+ *
+ * O administrador vem PRIMEIRO porque e ele que destrava o acesso ao sistema em
+ * um ambiente novo; a geografia e dado de apoio e, por ser idempotente, pode ser
+ * reexecutada sozinha por `npm run db:seed:geography` se falhar. Esse gatilho
+ * dedicado tambem e o caminho para ATUALIZAR o recorte municipal sem reescrever
+ * a linha do administrador — ver o cabecalho de `prisma/seeds/geography.seed.ts`.
+ *
+ * A ordem, porem, NAO cria dependencia: cada carga e isolada em seu proprio
+ * tratamento de erro (ver `executarSeed`), entao a falha de uma nao impede a
+ * outra de rodar — e o processo ainda assim termina com codigo de saida
+ * diferente de zero se qualquer uma falhar.
+ */
+
 /**
  * Provisionamento do administrador unico.
  *
@@ -127,10 +149,67 @@ async function avisarSobreAdminsExtras(idProvisionado: string): Promise<void> {
   }
 }
 
-async function executarSeed(): Promise<void> {
+async function cargaDoAdministrador(): Promise<void> {
   const idProvisionado = await provisionarAdmin(credenciaisDoAdmin());
 
   await avisarSobreAdminsExtras(idProvisionado);
+}
+
+async function cargaDaGeografia(): Promise<void> {
+  const geografia = await seedGeography(prisma);
+
+  console.info(
+    `[catdog-backend] Geografia semeada: ${geografia.statesCreated} estado(s) e ` +
+      `${geografia.citiesCreated} municipio(s) criados nesta execucao.`,
+  );
+}
+
+interface CargaDoSeed {
+  readonly nome: string;
+  readonly executar: () => Promise<void>;
+}
+
+/**
+ * As duas cargas sao independentes — a task declara isso — e o `seed.ts` precisa
+ * HONRAR essa independencia tambem no caminho de falha. Sem isolamento, um
+ * ambiente novo sem `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` derrubava a primeira
+ * carga e a geografia nunca rodava: `states` e `cities` ficavam vazias em CI,
+ * bloqueando quem depende desses dados de apoio.
+ *
+ * Cada carga roda dentro do proprio `try`, em SEQUENCIA (nada de concorrencia
+ * sobre o mesmo pool, e o log sai em ordem deterministica). A falha de uma nao
+ * impede a outra, mas tambem NAO e engolida: a mensagem de cada falha e impressa
+ * na hora, com o nome da carga, e o resumo final relanca para que o `catch` la
+ * embaixo marque `process.exitCode = 1`. Seed parcial termina vermelho.
+ */
+async function executarSeed(): Promise<void> {
+  const cargas: readonly CargaDoSeed[] = [
+    { nome: 'administrador', executar: cargaDoAdministrador },
+    { nome: 'geografia', executar: cargaDaGeografia },
+  ];
+
+  const falharam: string[] = [];
+
+  for (const carga of cargas) {
+    try {
+      await carga.executar();
+    } catch (motivo: unknown) {
+      falharam.push(carga.nome);
+
+      console.error(
+        `[catdog-backend] Carga "${carga.nome}" falhou:`,
+        motivo instanceof Error ? motivo.message : motivo,
+      );
+    }
+  }
+
+  if (falharam.length > 0) {
+    throw new Error(
+      `${falharam.length} de ${cargas.length} carga(s) falharam (${falharam.join(', ')}). ` +
+        'A mensagem de cada falha esta acima; as demais cargas foram concluidas. ' +
+        'Corrija o que falta e rode de novo — as cargas sao idempotentes.',
+    );
+  }
 }
 
 /**
@@ -146,7 +225,7 @@ async function executarSeed(): Promise<void> {
 void executarSeed()
   .catch((motivo: unknown) => {
     console.error(
-      '[catdog-backend] Seed do administrador falhou:',
+      '[catdog-backend] Seed falhou:',
       motivo instanceof Error ? motivo.message : motivo,
     );
 
