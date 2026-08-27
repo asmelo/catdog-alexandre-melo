@@ -37,7 +37,7 @@ Entrega `GET /api/animals` (paginado no servidor desde a primeira entrega, RN-42
 
 | Action | Path | Why (≤5 words) |
 |---|---|---|
-| `create` | `src/domains/animals/animals.messages.ts` | catálogo PT-BR |
+| `modify` | `src/domains/animals/animals.messages.ts` | acrescenta chaves de leitura |
 | `create` | `src/domains/animals/animals.validators.ts` | schemas de leitura |
 | `create` | `src/domains/animals/errors/animal.errors.ts` | erros do animal |
 | `create` | `src/utils/age.ts` | idade em anos completos |
@@ -55,8 +55,10 @@ Entrega `GET /api/animals` (paginado no servidor desde a primeira entrega, RN-42
 
 > **Reference pattern**: `src/domains/geography/` (TASK-BACKEND-005) é a fatia vertical mais próxima e recém-criada; `src/domains/auth/mappers/user.mapper.ts` é o modelo do mapper; `src/utils/clock.ts` é obrigatório — **nenhum arquivo desta task instancia `new Date()`**, porque os testes de idade fixam o instante.
 
-### `src/domains/animals/animals.messages.ts` *(create)*
-- Literais da tabela "Mensagens ao Usuário": `ANIMAL_NOT_FOUND`, `INVALID_IDENTIFIER`, `VALIDATION_GUARD` ("Verifique os campos informados."). As demais entram nos slices de escrita — não antecipar.
+### `src/domains/animals/animals.messages.ts` *(modify)*
+- **O arquivo JÁ EXISTE — não recriar.** A `TASK-BACKEND-003` precisou criá-lo: o invariante do projeto manda todo texto exibido ao usuário viver em `<dominio>.messages.ts` (precedentes: `auth.messages.ts`, `species.messages.ts`), e a entrada de arquivos daquela fatia já produz texto ao usuário. Ele hoje carrega `VALIDATION_GUARD`, `FIELD_NOT_ALLOWED`, `ANIMAL_IMAGE_LIMIT_EXCEEDED`, `ANIMAL_IMAGE_TYPE_NOT_ALLOWED`, `ANIMAL_IMAGE_TOO_LARGE`, `IMAGE_FILE_EMPTY`, `REQUEST_BODY_TOO_LARGE` e `UNSUPPORTED_MEDIA_TYPE`. Sobrescrevê-lo apagaria as mensagens que o middleware de upload consome e derrubaria a suíte da 003.
+- **ACRESCENTAR** ao objeto existente as chaves de leitura: `ANIMAL_NOT_FOUND` e `INVALID_IDENTIFIER`. `VALIDATION_GUARD` ("Verifique os campos informados.") **já está lá** — reusar, não duplicar.
+- As demais entram nos slices de escrita — não antecipar.
 
 ### `src/domains/animals/animals.validators.ts` *(create)*
 - `listAnimalsQuerySchema`: `page` `z.coerce.number().int().min(1).default(1)`; `pageSize` `z.coerce.number().int().min(1).max(100).default(20)`. `.strict()`.

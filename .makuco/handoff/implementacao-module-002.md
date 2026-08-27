@@ -55,7 +55,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 | Task | Status | Testes | Commit |
 |---|---|---|---|
 | 001 backend schema animais/estados/cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 20 suítes / 270 testes | `6e7910f` |
-| 002 backend carga de estados e municípios | **concluída** — 3 rodadas (1 reprovação), aprovada na 3ª | typecheck exit 0; 20 suítes / 270 testes; **27 UFs / 5571 municípios** carregados | ver `git log` |
+| 002 backend carga de estados e municípios | **concluída** — 3 rodadas (1 reprovação), aprovada na 3ª | typecheck exit 0; 20 suítes / 270 testes; **27 UFs / 5571 municípios** carregados | `a396314` |
+| 003 backend multipart, limites e assinatura | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; **21 suítes / 282 testes** | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -89,6 +90,31 @@ concorrência não divide a espera, **multiplica**: medido ~880-930 ms por `upda
 contra um teto de 10. Lotes de 25 e de 1.000 quebram no mesmo ponto — verificado por experimento independente com
 `pg_sleep` (25 concorrentes → 6 sucessos; 200 concorrentes → 6 sucessos; em série → 25 de 25). **Resolvido
 serializando** (`for … await`). Custa ~1 s por município renomeado e conclui inteiro, em vez de abortar na metade.
+
+**F2/TASK-BACKEND-003** — leitura de `multipart/form-data` restrita às rotas de animal, limites de corpo, os status
+413/415, e apuração de formato **por assinatura binária**. `src/app.ts` **intocado**: o middleware é exportado mas
+não montado — quem monta são as tasks 007/008. `express.json({ limit: '10kb' })` continua o único leitor global.
+
+Matriz de segurança verificada com arquivos construídos: JPEG real com nome `.txt` e `Content-Type: text/plain` é
+**aceito**; SVG com `<script>` renomeado para `.jpg` e declarado `image/jpeg` dá **`null`**. Idem GIF, PDF, ELF,
+ZIP, WEBP, TIFF, BMP, GZIP, JPEG truncado e arquivo de 0 byte. **SVG não entrou em lista nenhuma** — é o caso que a
+regra existe para barrar, porque servido de balde público executaria script no navegador de quem abrisse a imagem.
+
+**Reprovada na rodada 1:** a tradução só interceptava `MulterError`, mas **todo o busboy sinaliza falha de leitura
+com `Error` cru** — corpo sem `boundary`, truncado ou com cabeçalho de parte malformado viravam **500**. Corrigido
+traduzindo por origem. A rodada 2 construiu **23 vetores novos** de corpo malformado por outros ângulos: nenhum
+produz 500, nenhum emite log.
+
+Achado próprio do agente, não óbvio: o busboy corta quando o contador **atinge** o limite
+(`if (fileSize === fileSizeLimit)`), então configurar 5 MB cru **recusava um arquivo de exatamente 5 MB**, que a
+spec manda aceitar. Daí o `+ 1` no limite.
+
+**Dependência com vulnerabilidade conhecida:** `file-type@16.5.4` carrega o GHSA-5v7r-6r5c-r473 (laço infinito no
+parser de ASF). A revisão construiu o ASF malformado e confirmou que **no cru o parser trava para sempre**. A
+mitigação é um pré-filtro pelas assinaturas de JPEG/PNG que torna o parser inalcançável — verificado nos dois
+sentidos: não alarga nem estreita a entrada. O bloqueio para subir de versão é **exclusivamente ESM** (a 21.3.1+ já
+está corrigida e aceita Node 20); a saída definitiva é o backend migrar para ESM, não subir de versão.
+`npm audit` segue reportando 1 moderate.
 
 ## Decisões fora da spec
 
@@ -268,6 +294,21 @@ escondeu o caso. Resolvido com sequência de **escrita** por espécie (o marcado
 falhou não mudou nada no servidor e não pode barrar o retrato de uma escrita anterior que deu certo).
 
 ## Achados a repassar para tasks futuras
+
+- **F2/TASK-BACKEND-004 — ARMADILHA DIRETA, herdada da 003.** A tradução de falhas do multipart filtra "defeito de
+  programação" por **quatro construtores** (`TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`), não por
+  origem. A 004 pluga o adaptador de armazenamento **na mesma tubulação**: um defeito dele sinalizado com
+  `new Error(...)` viraria **415 silencioso** — o inverso exato do bug que reprovou a 003. Se o adaptador puder
+  falhar por defeito próprio, ele precisa sinalizar de forma distinguível.
+- **F2/TASK-BACKEND-007/008 — dívida da 003:** `LIMIT_FIELD_VALUE` produz `RequestBodyTooLargeError`, que orienta o
+  administrador a "enviar menos imagens" quando o problema é um **campo de texto**. Reproduzido (campo de 200 KB).
+  Não alcançável por administrador real hoje (o `description` tem teto de 1000 chars contra 16 KB do campo), mas
+  fica registrado.
+- **F2/TASK-BACKEND-011 — cobertura de ramos do middleware de upload está em 69,56%.** O contador de bytes e dois
+  ramos de tradução **não têm teste**; foram verificados por sonda, então uma regressão futura passa despercebida.
+- **ENCERRAMENTO DA FEATURE-002 — pendência:** o `code` `UNSUPPORTED_MEDIA_TYPE` é o **décimo** código novo, contra
+  os nove enumerados no changelog, e não está na tabela de mensagens do `spec_context.md`. Não bloqueia nenhuma
+  task; **bloqueia o fechamento da feature.**
 
 - **F2/TASK-BACKEND-005 — nomes de município SE REPETEM entre UFs** (`Boa Esperança` existe em ES, MG e PR). A
   listagem precisa ser escopada por estado, e nenhuma busca pode assumir unicidade de nome — o índice

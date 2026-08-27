@@ -55,6 +55,29 @@ export class GoneError extends AppError {
   }
 }
 
+/**
+ * 413 — corpo da requisicao (ou um arquivo dentro dele) acima do teto proprio da
+ * rota. Sempre acompanhado de mensagem de negocio em PT-BR: um 413 generico,
+ * produzido pelo servidor de borda, chegaria ao frontend sem `code` para
+ * ramificar (RN-51).
+ */
+export class PayloadTooLargeError extends AppError {
+  constructor(message: string, code: string) {
+    super(message, HTTP_STATUS.PAYLOAD_TOO_LARGE, code);
+  }
+}
+
+/**
+ * 415 — o corpo esta bem formado, mas o tipo de midia nao e aceito pela rota.
+ * Distinto do 400: nao ha campo a corrigir, e o formato inteiro do envio (ou do
+ * arquivo enviado) que a rota nao processa.
+ */
+export class UnsupportedMediaTypeError extends AppError {
+  constructor(message: string, code: string) {
+    super(message, HTTP_STATUS.UNSUPPORTED_MEDIA_TYPE, code);
+  }
+}
+
 /** `code` unico de toda falha de validacao de entrada. */
 export const VALIDATION_ERROR_CODE = 'VALIDATION_ERROR';
 
