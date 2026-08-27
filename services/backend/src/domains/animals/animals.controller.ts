@@ -4,6 +4,7 @@ import type {
   AnimalIdParams,
   CreateAnimalBody,
   ListAnimalsQuery,
+  UpdateAnimalBody,
 } from '~/domains/animals/animals.validators';
 import type { AnimalResponse } from '~/domains/animals/mappers/animal.mapper';
 import { PrismaAnimalRepository } from '~/domains/animals/repositories/animal.repository';
@@ -17,6 +18,7 @@ import {
   StoreAnimalImagesService,
   type AnimalImageUpload,
 } from '~/domains/animals/services/store-animal-images.service';
+import { UpdateAnimalService } from '~/domains/animals/services/update-animal.service';
 import { PrismaStateRepository } from '~/domains/geography/repositories/state.repository';
 import { PrismaSpeciesRepository } from '~/domains/species/repositories/species.repository';
 import { prisma } from '~/infra/prisma/prisma-client';
@@ -36,8 +38,9 @@ import { HTTP_STATUS } from '~/shared/http/http-status';
  * corpo de resposta de erro. E por isso que o `404 ANIMAL_NOT_FOUND` do
  * `GetAnimalService` nao aparece em lugar nenhum deste arquivo.
  *
- * A TASK-BACKEND-007 acrescentou o handler de CRIACAO; os de edicao, alteracao de
- * status e exclusao entram neste mesmo arquivo nas TASK-BACKEND-008 e 009.
+ * A TASK-BACKEND-007 acrescentou o handler de CRIACAO e a TASK-BACKEND-008 o de
+ * EDICAO; os de alteracao de status e de exclusao entram neste mesmo arquivo na
+ * TASK-BACKEND-009.
  */
 
 /** `GET /` e `POST /` nao tem parametro de caminho. */
@@ -65,6 +68,18 @@ type ManipuladorDeConsulta = RequestHandler<AnimalIdParams, AnimalResponse, unkn
  * `Boolean(req.body.x)` nem `new Date(...)` aqui.
  */
 type ManipuladorDeCriacao = RequestHandler<SemParametros, AnimalResponse, CreateAnimalBody>;
+
+/**
+ * A edicao le as DUAS pontas: o `id` do CAMINHO e os campos do corpo. O
+ * identificador nao esta no corpo e nao pode estar (RN-06) — e por isso que o
+ * generico de params e `AnimalIdParams`, o mesmo da consulta, e nao
+ * `SemParametros`.
+ *
+ * `updatedAt` chega como `Date` e `keepImageIds` como lista de texto ja
+ * decodificada do JSON: quem converteu foi o `updateAnimalBodySchema` dentro do
+ * `validateRequest`, e nao ha `new Date(...)` nem `JSON.parse(...)` aqui.
+ */
+type ManipuladorDeEdicao = RequestHandler<AnimalIdParams, AnimalResponse, UpdateAnimalBody>;
 
 /**
  * Traduz os arquivos que o `uploadAnimalImages` deixou em `req.files` para a
@@ -125,6 +140,7 @@ export interface AnimalsControllerDependencies {
   readonly listAnimals: ListAnimalsService;
   readonly getAnimal: GetAnimalService;
   readonly createAnimal: CreateAnimalService;
+  readonly updateAnimal: UpdateAnimalService;
 }
 
 export class AnimalsController {
@@ -192,6 +208,43 @@ export class AnimalsController {
 
     resposta.status(HTTP_STATUS.CREATED).json(animal);
   };
+
+  /**
+   * `200` com a representacao do animal ATUALIZADO, inclusive o `updatedAt` novo
+   * — que e o token que o cliente precisa para a proxima gravacao (RN-47).
+   *
+   * UM service e nada mais, como no `create`. O bloqueio otimista, a distincao
+   * entre `409 ANIMAL_STALE_UPDATE` e `404 ANIMAL_NOT_FOUND`, a reconciliacao das
+   * imagens, a transacao e as duas compensacoes vivem inteiros no
+   * `UpdateAnimalService`; aqui ha a leitura do `id` do caminho, a leitura do
+   * corpo ja validado, a traducao dos arquivos e o status da resposta.
+   *
+   * `imagensEnviadas` e a MESMA funcao do cadastro: os arquivos chegam pelo mesmo
+   * campo `images` e passam pelo mesmo middleware. Na edicao eles sao apenas as
+   * imagens NOVAS — as que permanecem viajam como identificadores em
+   * `keepImageIds`, e nunca sao reenviadas.
+   */
+  readonly update: ManipuladorDeEdicao = async (requisicao, resposta) => {
+    const corpo = requisicao.body;
+
+    const animal = await this.services.updateAnimal.execute({
+      id: requisicao.params.id,
+      expectedUpdatedAt: corpo.updatedAt,
+      name: corpo.name,
+      speciesId: corpo.speciesId,
+      cityId: corpo.cityId,
+      size: corpo.size,
+      sex: corpo.sex,
+      birthDate: corpo.birthDate,
+      description: corpo.description,
+      acceptsOtherAnimals: corpo.acceptsOtherAnimals,
+      needsLargeSpace: corpo.needsLargeSpace,
+      keepImageIds: corpo.keepImageIds,
+      images: imagensEnviadas(requisicao.files),
+    });
+
+    resposta.status(HTTP_STATUS.OK).json(animal);
+  };
 }
 
 /**
@@ -226,15 +279,21 @@ export function createAnimalsController(
    */
   const storage = new SupabaseImageStorage(createSupabaseStorageClient());
 
+  /**
+   * As tres portas de escrita sao construidas UMA vez e compartilhadas pelo
+   * cadastro e pela edicao: nenhuma delas guarda estado — so o client do Prisma e
+   * o cliente de rede do armazenamento — e duas instancias seriam duas coisas
+   * iguais com nomes diferentes. Compartilhar o `StoreAnimalImagesService` e o que
+   * mantem o pipeline de validacao e envio literalmente o mesmo nos dois caminhos.
+   */
+  const especies = new PrismaSpeciesRepository(prisma);
+  const geografia = new PrismaStateRepository(prisma);
+  const imagens = new StoreAnimalImagesService(storage);
+
   return new AnimalsController({
     listAnimals: new ListAnimalsService(animals),
     getAnimal: new GetAnimalService(animals),
-    createAnimal: new CreateAnimalService(
-      animals,
-      new PrismaSpeciesRepository(prisma),
-      new PrismaStateRepository(prisma),
-      new StoreAnimalImagesService(storage),
-      prisma,
-    ),
+    createAnimal: new CreateAnimalService(animals, especies, geografia, imagens, prisma),
+    updateAnimal: new UpdateAnimalService(animals, especies, geografia, imagens, prisma),
   });
 }

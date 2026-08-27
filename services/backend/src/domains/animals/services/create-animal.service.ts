@@ -75,14 +75,19 @@ export interface CreateAnimalInput {
  * publico passa a ser erro de compilacao aqui, em vez de cair num ramo default
  * silencioso. E a operacao INVERSA do `PORTE_PUBLICO`/`SEXO_PUBLICO` do mapper —
  * cada uma no seu sentido, nenhuma das duas reimplementando a outra.
+ *
+ * EXPORTADOS desde a TASK-BACKEND-008: a edicao grava as mesmas colunas a partir
+ * do mesmo vocabulario publico e importa estes dois mapas em vez de redeclara-los.
+ * Duas copias divergiriam no dia em que um porte fosse acrescentado, e o cadastro
+ * passaria a aceitar um valor que a edicao recusa.
  */
-const PORTE_PERSISTIDO: Readonly<Record<PublicAnimalSize, AnimalSize>> = {
+export const PORTE_PERSISTIDO: Readonly<Record<PublicAnimalSize, AnimalSize>> = {
   pequeno: AnimalSize.PEQUENO,
   medio: AnimalSize.MEDIO,
   grande: AnimalSize.GRANDE,
 };
 
-const SEXO_PERSISTIDO: Readonly<Record<PublicAnimalSex, AnimalSex>> = {
+export const SEXO_PERSISTIDO: Readonly<Record<PublicAnimalSex, AnimalSex>> = {
   macho: AnimalSex.MACHO,
   femea: AnimalSex.FEMEA,
 };
@@ -160,7 +165,10 @@ export class CreateAnimalService {
          * nenhum animal que os referencie — invisiveis para qualquer limpeza
          * futura, que so sabe procurar pelo prefixo de um animal existente.
          */
-        await this.images.compensar(gravadas.map((imagem) => imagem.objectPath));
+        await this.images.compensar(
+          gravadas.map((imagem) => imagem.objectPath),
+          'envioDesfeito',
+        );
 
         throw motivo;
       },

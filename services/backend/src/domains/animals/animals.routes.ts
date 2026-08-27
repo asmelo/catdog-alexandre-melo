@@ -5,6 +5,7 @@ import {
   animalIdParamsSchema,
   createAnimalBodySchema,
   listAnimalsQuerySchema,
+  updateAnimalBodySchema,
 } from '~/domains/animals/animals.validators';
 import { authenticate } from '~/middlewares/authenticate.middleware';
 import { authorizeRole } from '~/middlewares/authorize-role.middleware';
@@ -45,9 +46,9 @@ import { validateRequest } from '~/middlewares/validate-request.middleware';
  * as paginas da listagem.
  *
  * A TASK-BACKEND-007 declarou o `POST /`, primeira rota de ESCRITA e primeira do
- * projeto inteiro a montar o leitor de multipart; `PATCH /:id`,
- * `PATCH /:id/status` e `DELETE /:id` entram neste mesmo arquivo nas
- * TASK-BACKEND-008 e 009.
+ * projeto inteiro a montar o leitor de multipart; a TASK-BACKEND-008 declarou o
+ * `PATCH /:id`. `PATCH /:id/status` e `DELETE /:id` entram neste mesmo arquivo na
+ * TASK-BACKEND-009.
  */
 
 const controller = createAnimalsController();
@@ -133,4 +134,46 @@ animalsRoutes.post(
   uploadAnimalImages,
   validateRequest({ body: createAnimalBodySchema }),
   controller.create,
+);
+
+/**
+ * `PATCH /api/animals/:id` — edicao com bloqueio otimista e reconciliacao de
+ * imagens (RN-35, RN-36, RN-46, RN-47, RN-50).
+ *
+ * `PATCH` e nao `PUT`, e a escolha nao e estilistica: a configuracao de CORS em
+ * vigor nao libera o verbo `PUT` (Decisao 2 do changelog). Pelo mesmo motivo o
+ * token de concorrencia viaja no CORPO e nao em `If-Match` — o CORS libera apenas
+ * os cabecalhos `Content-Type` e `Authorization`, e usar um cabecalho proprio
+ * exigiria alterar configuracao transversal fora do escopo desta feature.
+ *
+ * A MESMA ORDEM OBRIGATORIA do `POST`, com `params` a mais no `validateRequest`:
+ *
+ * 1. `authenticate` — identifica quem esta chamando.
+ * 2. `authorizeRole('admin')` — DEPOIS dele, porque le `req.authUser`.
+ * 3. `uploadAnimalImages` — DEPOIS da autorizacao (CA-40): um `cliente` recebe
+ *    `403` sem que o servidor leia os 25 MB do corpo.
+ * 4. `validateRequest` — DEPOIS do multipart, que e quem POPULA `req.body` com os
+ *    campos de texto do formulario. Invertida, a ordem faria toda edicao valida
+ *    responder "Este campo é obrigatório." para os campos obrigatorios.
+ * 5. `controller.update`.
+ *
+ * `validateRequest` recebe `params` E `body`, ao contrario do `POST`: o `id` do
+ * caminho precisa ser conferido como UUID para que `"abc"` responda `400`
+ * apontando `field: "id"` em vez de chegar ao repositorio e virar um `WHERE`
+ * sobre coluna `uuid` que o Postgres recusa — entrada invalida virando 500. E o
+ * mesmo motivo pelo qual o `GET /:id` o declara.
+ *
+ * `authorizeRole('admin')` em MINUSCULAS, como em todas as rotas acima: `'ADMIN'`
+ * e o literal do enum `UserRole` do BANCO, e o tipo `AuthRole` do contrato de API
+ * nao o admite — `'ADMIN'` NAO COMPILA (verificado: TS2345).
+ *
+ * SEM LIMITADOR DE TAXA, pela mesma razao do `POST` (Decisao 14 do changelog).
+ */
+animalsRoutes.patch(
+  '/:id',
+  authenticate,
+  authorizeRole('admin'),
+  uploadAnimalImages,
+  validateRequest({ params: animalIdParamsSchema, body: updateAnimalBodySchema }),
+  controller.update,
 );

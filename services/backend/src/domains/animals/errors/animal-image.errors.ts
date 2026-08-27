@@ -134,3 +134,36 @@ export class ImageStorageUnavailableError extends ServiceUnavailableError {
     super(MESSAGES.IMAGE_STORAGE_UNAVAILABLE, 'IMAGE_STORAGE_UNAVAILABLE');
   }
 }
+
+/**
+ * CT-62 — `keepImageIds` cita uma imagem que existe, mas pertence a OUTRO animal
+ * (ou que ja nao existe).
+ *
+ * 400 e nao 404, e essa e a decisao que a classe carrega: o recurso da requisicao
+ * e o ANIMAL de `PATCH /api/animals/:id`, e ele existe — a leitura que abre o
+ * caso de uso ja o encontrou. O que esta errado e um CAMPO DO CORPO, exatamente
+ * como um `speciesId` malformado. Respondendo `404`, a interface concluiria que o
+ * animal sumiu, voltaria para a listagem e descartaria tudo o que o administrador
+ * havia preenchido.
+ *
+ * `code` generico `VALIDATION_ERROR` com `details` apontando `keepImageIds`, e
+ * nao um `code` proprio: e o que a tabela de falhas de `PATCH /api/animals/:id`
+ * fixa, e e o `field` — nao o `code` — que diz a interface qual campo marcar.
+ *
+ * A mensagem-guarda de topo e a mesma de qualquer `400` de validacao, produzida
+ * por `validationErrorFromZodError` nos erros vindos do schema: as duas origens
+ * respondem com o mesmo envelope, e o frontend nao precisa saber qual camada
+ * recusou.
+ *
+ * UM item em `details` para a lista inteira, e nao um por identificador
+ * invalido: `keepImageIds` e UM campo do formulario, com UM lugar onde a
+ * interface exibe a mensagem, e a correcao e a mesma qualquer que seja o numero
+ * de identificadores errados — recarregar o animal e refazer a selecao.
+ */
+export class AnimalImageNotFoundError extends ValidationError {
+  constructor() {
+    super(MESSAGES.VALIDATION_GUARD, VALIDATION_ERROR_CODE, [
+      { field: 'keepImageIds', message: MESSAGES.IMAGE_NOT_FOUND },
+    ]);
+  }
+}

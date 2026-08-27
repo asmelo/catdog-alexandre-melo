@@ -9,9 +9,10 @@ import type { AnimalImage, AnimalSex, AnimalSize, Prisma, PrismaClient } from '@
  * O repositorio NAO lanca erro HTTP: ausencia e `null`, e quem decide se `null`
  * e um problema e o service.
  *
- * A TASK-BACKEND-007 acrescentou a CRIACAO (`create` e `createImages`); edicao,
- * alteracao de status e exclusao entram neste mesmo arquivo nas TASK-BACKEND-008
- * e 009.
+ * A TASK-BACKEND-007 acrescentou a CRIACAO (`create` e `createImages`) e a
+ * TASK-BACKEND-008 acrescentou a EDICAO (`updateIfUnchanged`, `deleteImagesByIds`
+ * e `updateImagePosition`); alteracao de status e exclusao entram neste mesmo
+ * arquivo na TASK-BACKEND-009.
  */
 
 /**
@@ -139,6 +140,34 @@ export interface CreateAnimalData {
 }
 
 /**
+ * Colunas de `animals` que a EDICAO regrava. E `CreateAnimalData` menos `id`, e
+ * a subtracao e a RN-06 escrita no tipo: o identificador do animal e estavel, e
+ * um campo aqui seria a porta pela qual uma edicao poderia renomear o recurso que
+ * ela edita — inclusive apontando para o de outra pessoa.
+ *
+ * `status` continua ausente pelo mesmo motivo do cadastro (RN-16): a alteracao de
+ * status e operacao propria, com endpoint proprio.
+ *
+ * `updatedAt` tambem NAO entra, e a ausencia e o oposto de um esquecimento:
+ * ele e o TOKEN de bloqueio otimista e quem o regrava e o `@updatedAt` do schema,
+ * automaticamente, a cada `updateMany` — verificado contra o banco deste projeto.
+ * Deixar quem chama escolher a marca nova seria deixar o cliente fixar o token
+ * que a proxima gravacao vai exigir.
+ */
+export interface UpdateAnimalData {
+  readonly name: string;
+  readonly nameNormalized: string;
+  readonly speciesId: string;
+  readonly cityId: string;
+  readonly size: AnimalSize;
+  readonly sex: AnimalSex;
+  readonly birthDate: Date | null;
+  readonly description: string | null;
+  readonly acceptsOtherAnimals: boolean;
+  readonly needsLargeSpace: boolean;
+}
+
+/**
  * Linha de `animal_images` pronta para o `INSERT`.
  *
  * `storagePath` ja vem de `buildAnimalImageObjectPath` e `contentType` ja vem da
@@ -195,6 +224,58 @@ export interface AnimalRepository {
     animalId: string,
     images: ReadonlyArray<CreateAnimalImageData>,
   ): Promise<ReadonlyArray<AnimalImage>>;
+  /**
+   * RN-47 — atualizacao CONDICIONAL (compare-and-swap): regrava as colunas de
+   * `data` SOMENTE se `updatedAt` ainda for `expectedUpdatedAt`, e devolve
+   * quantas linhas foram afetadas.
+   *
+   * A CONTAGEM E O RESULTADO QUE IMPORTA, e e por isso que o metodo nao devolve
+   * o animal: `count === 0` significa que o registro mudou (ou sumiu) entre a
+   * leitura que alimentou o formulario e esta gravacao. Um `update` simples por
+   * `id` sobrescreveria em silencio — exatamente a perda que a RN-47 existe para
+   * impedir. Mesmo desenho do `consume` de
+   * `email-confirmation-token.repository.ts`, que e o precedente do projeto para
+   * atualizacao condicional que devolve contagem.
+   *
+   * `count === 0` NAO distingue "nao existe" de "mudou", e o repositorio nao
+   * tenta distinguir: ele nao lanca erro HTTP e nao sabe o que cada desfecho
+   * significa para quem chama. Quem separa `404 ANIMAL_NOT_FOUND` de
+   * `409 ANIMAL_STALE_UPDATE` e o service, com uma releitura posterior.
+   *
+   * O `updatedAt` novo NAO e parametro: o `@updatedAt` do schema o grava sozinho
+   * neste `updateMany` — verificado contra o banco deste projeto (Postgres 17.6,
+   * Prisma 5.22): a marca depois da gravacao e diferente da anterior, e a mesma
+   * condicao repetida com a marca antiga devolve `0` sem alterar nada.
+   */
+  updateIfUnchanged(
+    id: string,
+    expectedUpdatedAt: Date,
+    data: UpdateAnimalData,
+  ): Promise<number>;
+  /**
+   * RN-36 — apaga as linhas de `animal_images` cujos identificadores foram
+   * removidos do formulario, e devolve quantas apagou.
+   *
+   * Apaga apenas o REGISTRO. O objeto correspondente no armazenamento e removido
+   * por quem chama, DEPOIS do commit: a remocao nao participa da transacao e nao
+   * pode ser desfeita por ela.
+   *
+   * Lista vazia e chamada VALIDA e devolve `0` sem tocar o banco — uma edicao que
+   * nao remove nenhuma imagem e o caso comum.
+   */
+  deleteImagesByIds(ids: ReadonlyArray<string>): Promise<number>;
+  /**
+   * RN-35 — reposiciona UMA imagem mantida na ordem final escolhida pelo
+   * administrador.
+   *
+   * Uma imagem por chamada, e nao um lote: cada linha recebe uma posicao
+   * DIFERENTE, entao nao ha `updateMany` a fazer — seriam no maximo cinco
+   * `UPDATE` de qualquer forma. A tabela nao tem restricao de unicidade sobre
+   * `(animalId, position)` exatamente para que a reordenacao possa passar por
+   * estados intermediarios com posicao repetida dentro da transacao (ver o
+   * comentario do `@@index` no schema); verificado contra o banco deste projeto.
+   */
+  updateImagePosition(id: string, position: number): Promise<void>;
   /**
    * Mesma porta ligada a uma transacao em andamento.
    *
@@ -361,6 +442,64 @@ export class PrismaAnimalRepository implements AnimalRepository {
         sizeBytes: imagem.sizeBytes,
       })),
     });
+  }
+
+  /**
+   * `updateMany` e nao `update`, e a escolha e a razao de o metodo existir: o
+   * `update` do Prisma exige um filtro UNICO e lanca `P2025` quando nada casa,
+   * transformando um conflito de concorrencia previsto — que o contrato responde
+   * com `409` — em excecao de infraestrutura a inspecionar por codigo de erro. O
+   * `updateMany` aceita `updatedAt` no `where` e devolve `{ count }`, que e
+   * exatamente a informacao de que o service precisa.
+   *
+   * O `data` lista as colunas uma a uma, e nao repassa o objeto recebido: e o que
+   * impede uma chave inesperada de virar coluna gravada caso a forma de
+   * `UpdateAnimalData` cresca. Mesmo cuidado ja aplicado em `create`.
+   */
+  async updateIfUnchanged(
+    id: string,
+    expectedUpdatedAt: Date,
+    data: UpdateAnimalData,
+  ): Promise<number> {
+    const resultado = await this.db.animal.updateMany({
+      where: { id, updatedAt: expectedUpdatedAt },
+      data: {
+        name: data.name,
+        nameNormalized: data.nameNormalized,
+        speciesId: data.speciesId,
+        cityId: data.cityId,
+        size: data.size,
+        sex: data.sex,
+        birthDate: data.birthDate,
+        description: data.description,
+        acceptsOtherAnimals: data.acceptsOtherAnimals,
+        needsLargeSpace: data.needsLargeSpace,
+      },
+    });
+
+    return resultado.count;
+  }
+
+  /**
+   * A saida explicita na lista vazia evita um `DELETE ... WHERE id IN ()` inutil
+   * dentro da transacao — a edicao que nao remove imagem nenhuma e o caso comum, e
+   * uma ida ao banco por edicao, com o pooler de conexao unica do Supabase, e
+   * tempo de transacao aberta que nao compra nada.
+   */
+  async deleteImagesByIds(ids: ReadonlyArray<string>): Promise<number> {
+    if (ids.length === 0) {
+      return 0;
+    }
+
+    const resultado = await this.db.animalImage.deleteMany({
+      where: { id: { in: [...ids] } },
+    });
+
+    return resultado.count;
+  }
+
+  async updateImagePosition(id: string, position: number): Promise<void> {
+    await this.db.animalImage.update({ where: { id }, data: { position } });
   }
 
   withTransaction(executor: Prisma.TransactionClient): AnimalRepository {

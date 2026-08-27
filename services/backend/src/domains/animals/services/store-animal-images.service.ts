@@ -77,6 +77,13 @@ interface ImagemPreparada {
   readonly sizeBytes: number;
 }
 
+/**
+ * Por que os objetos estao sendo removidos — ver `FALHA_DE_REMOCAO`. Conjunto
+ * FECHADO: um chamador novo tem de escolher uma das duas causas, e nao pode
+ * inventar uma frase de log propria fora deste arquivo.
+ */
+export type CausaDaRemocao = 'envioDesfeito' | 'imagensSubstituidas';
+
 const ARQUIVO_VAZIO_BYTES = 0;
 
 export class StoreAnimalImagesService {
@@ -224,7 +231,10 @@ export class StoreAnimalImagesService {
       return gravadas;
     }
 
-    await this.compensar(gravadas.map((imagem) => imagem.objectPath));
+    await this.compensar(
+      gravadas.map((imagem) => imagem.objectPath),
+      'envioDesfeito',
+    );
 
     throw primeiraFalha(desfechos);
   }
@@ -250,11 +260,41 @@ export class StoreAnimalImagesService {
   }
 
   /**
+   * As DUAS causas que levam objetos ja no balde a serem removidos, cada uma com
+   * a sua frase de log.
+   *
+   * A politica de engolir-e-registrar continua morando em UM lugar so
+   * (`compensar`); o que se distingue aqui e apenas o TEXTO, porque as duas causas
+   * pedem investigacoes opostas:
+   *
+   * - `envioDesfeito` — a gravacao NAO aconteceu (transacao desfeita, conflito,
+   *   animal ausente) e os objetos que sobraram sao de imagens que o produto nunca
+   *   passou a referenciar;
+   * - `imagensSubstituidas` — a gravacao ACONTECEU, e o que ficou para tras sao os
+   *   objetos das imagens que a edicao trocou (RN-36, RN-40). Quem le o log nao
+   *   deve sair a procura de um envio desfeito que nao existe.
+   *
+   * Frases inteiras e nao pedacos concatenados: cada uma continua sendo um literal
+   * unico, localizavel por busca direta no codigo a partir da linha do log.
+   */
+  private static readonly FALHA_DE_REMOCAO: Readonly<Record<CausaDaRemocao, string>> = {
+    envioDesfeito:
+      '[animal-images] falha ao remover objetos apos envio desfeito; limpeza pendente',
+    imagensSubstituidas:
+      '[animal-images] falha ao remover objetos de imagens substituidas; limpeza pendente',
+  };
+
+  /**
    * Remove os objetos que subiram antes de a falha ser propagada (RN-39, CT-55).
    *
    * Publico porque o cadastro tambem precisa dele DEPOIS do envio: se a transacao
    * do banco falhar com as imagens ja no balde, o banco se desfaz sozinho e o
-   * armazenamento nao. Ver `create-animal.service.ts`.
+   * armazenamento nao. Ver `create-animal.service.ts`. A edicao o chama duas
+   * vezes, com causas diferentes: para desfazer o envio quando a transacao cai, e
+   * depois do commit para apagar os objetos das imagens substituidas.
+   *
+   * `causa` e OBRIGATORIA justamente para que nenhum chamador novo herde por
+   * omissao a frase do caminho errado.
    *
    * A FALHA DA PROPRIA COMPENSACAO NAO PROPAGA, e isso e a RN-40: a remocao nao e
    * revertida e o objeto remanescente vira pendencia de limpeza no log. Deixa-la
@@ -262,16 +302,19 @@ export class StoreAnimalImagesService {
    * salvar as imagens" — por um erro sobre a faxina, e o administrador leria uma
    * mensagem sobre uma operacao que ele nao pediu.
    */
-  async compensar(objectPaths: ReadonlyArray<string>): Promise<void> {
+  async compensar(
+    objectPaths: ReadonlyArray<string>,
+    causa: CausaDaRemocao,
+  ): Promise<void> {
     if (objectPaths.length === 0) {
       return;
     }
 
     await this.storage.remove(objectPaths).catch((motivo: unknown) => {
-      console.error(
-        '[animal-images] falha ao remover objetos apos envio desfeito; limpeza pendente',
-        { objectPaths, motivo },
-      );
+      console.error(StoreAnimalImagesService.FALHA_DE_REMOCAO[causa], {
+        objectPaths,
+        motivo,
+      });
     });
   }
 }

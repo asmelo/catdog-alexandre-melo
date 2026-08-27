@@ -60,7 +60,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 | 004 backend porta de armazenamento + Supabase | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; **24 suítes / 314 testes**; `src/infra/storage` em 100% | `0445a29` |
 | 005 backend endpoints de estados e cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `4e799d3` |
 | 006 backend leitura de animais, paginação e idade | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 24 suítes / 314 testes | `febeb92` |
-| 007 backend criação de animal com upload | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
+| 007 backend criação de animal com upload | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `eba537f` |
+| 008 backend edição com trava otimista | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -369,6 +370,29 @@ a task NÃO foi emendada com a afirmação falsa.**
 Corrigido também um segundo comentário normativo que afirmava mecanismo inexistente: o repositório dizia que o
 `RETURNING` "preserva a ordem dos dados enviados" — comportamento observado do Postgres, não contrato SQL. A ordem
 das imagens no `POST` passou a ser garantida por `sort` explícito.
+
+**F2/TASK-BACKEND-008** — `PATCH /api/animals/:id` com trava otimista e reconciliação de imagens.
+`animals.messages.ts` foi de **22 para 27 chaves**, só por apêndice.
+
+**A trava foi reproduzida contra o Postgres real** (17.6 / Prisma 5.22): o `@updatedAt` **é** aplicado pelo
+`updateMany` (logo o token gira sozinho e não é parâmetro), marca antiga devolve `count = 0` sem alterar nada, o
+round-trip do token por `toISOString()` casa com `timestamptz(3)` sem perda, e a releitura **dentro** da transação
+distingue 404 de 409 — verificado com dois clientes concorrentes de verdade.
+
+**A assimetria das imagens:** as novas sobem **antes** da transação (cada objeto custa até 20 s e a transação
+seguraria a conexão do pooler); os objetos das removidas só são apagados **depois do commit** — apagados antes,
+uma transação desfeita deixaria o registro apontando para objeto inexistente, e **foto quebrada é pior que órfão
+invisível**.
+
+**Defeito corrigido:** `"2026-02-30T00:00:00.000Z"` **passava** — casa a regex e o V8 **transborda** para 2 de
+março em vez de dar `NaN`, então o token inválido virava outro instante e a resposta saía **409 em vez de 400**.
+O comentário do arquivo afirmava que esse modo de falha estava prevenido. Corrigido reusando a função de validação
+de calendário que o schema de data de nascimento já usava.
+
+**As quatro alegações do agente de que a task não funciona procederam todas** e viraram emenda — incluindo uma
+**restrição endereçada por nome à TASK-009**: a dispensa de um método de leitura de imagens se apoia no invariante
+de que toda mutação de `animal_images` passa pela linha de `animals` e gira o token. A revisão auditou e confirmou
+que vale hoje; qualquer operação futura que altere imagem sem tocar `animals` invalida a reconciliação.
 
 ## ⚠️ AÇÃO DO DONO DO PROJETO — o backend não sobe sem credencial de armazenamento
 

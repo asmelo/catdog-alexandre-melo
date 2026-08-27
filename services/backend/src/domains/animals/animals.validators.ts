@@ -16,8 +16,9 @@ import { now } from '~/utils/clock';
  * repositorio recebem os valores prontos — ja coagidos, ja normalizados e ja com
  * os padroes aplicados — e nenhum deles revalida nada.
  *
- * O schema do `PATCH` entra neste mesmo arquivo nas TASK-BACKEND-008 e 009 — nao
- * antecipado aqui.
+ * A TASK-BACKEND-008 acrescentou o schema do `PATCH /api/animals/:id`; o do
+ * `PATCH /api/animals/:id/status` entra neste mesmo arquivo na TASK-BACKEND-009 —
+ * nao antecipado aqui.
  */
 
 /** RN-42 — pagina padrao e primeira pagina. */
@@ -518,6 +519,206 @@ const alternanciaSchema = z
   .transform((texto) => texto === 'true');
 
 /**
+ * ISO 8601 com data, hora e FUSO EXPLICITO. O fuso e obrigatorio de proposito:
+ * `"2026-08-25T13:40:12.481"` sem sufixo seria interpretado como hora LOCAL do
+ * processo, e um servidor em UTC e outro em America/Sao_Paulo leriam instantes
+ * diferentes do mesmo texto — o token de concorrencia passaria a depender de onde
+ * a aplicacao roda.
+ *
+ * Os milissegundos sao opcionais na forma, mas a coluna e `@db.Timestamptz(3)`:
+ * um token sem eles so casa com um registro gravado no milissegundo zero. Isso
+ * NAO e um problema a corrigir aqui — o token e opaco para quem o devolve, e a
+ * interface reenvia exatamente o texto que o `GET` serializou com `toISOString()`,
+ * que sempre traz os tres digitos. Uma marca truncada simplesmente nao casa e sai
+ * como `409`, que e a resposta correta para "este nao e o estado que voce leu".
+ */
+const FORMATO_DE_DATA_E_HORA =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * `YYYY-MM-DD` — a parte de CALENDARIO do token, sempre a frente do `T` porque a
+ * forma e ancorada. O dia do mes e conferido sobre esse recorte, e nao sobre o
+ * instante inteiro: 30 de fevereiro nao existe em fuso nenhum, entao a pergunta
+ * "essa data de calendario existe?" independe do deslocamento que vem no fim.
+ */
+const TAMANHO_DA_DATA_CIVIL = 10;
+
+/**
+ * Tres conferencias, e as tres sao necessarias — nenhuma cobre a outra:
+ *
+ * 1. A FORMA ancorada. `new Date` nao lanca: `new Date("2026")` e uma data valida
+ *    — 1o de janeiro — e sem a ancora um token truncado viraria um instante de
+ *    significado completamente diferente, recusado como conflito em vez de como
+ *    entrada malformada.
+ * 2. O CALENDARIO da data civil, pela MESMA `comoDataCivilUtc` que
+ *    `dataDeNascimentoSchema` usa. `"2026-02-30T00:00:00.000Z"` casa a forma e
+ *    NAO produz `NaN`: o motor TRANSBORDA o dia excedente e devolve 2 de marco.
+ *    Sem esta conferencia o token vira um instante DIFERENTE do que o
+ *    administrador digitou e a resposta sai `409` em vez do `400` que o contrato
+ *    pede para marca malformada. `"2026-02-29"` (2026 nao e bissexto) tem o mesmo
+ *    desfecho, e `"2024-02-29"` (bissexto) passa, como deve.
+ * 3. O `NaN` do instante completo, que e o que barra o que a forma deixa passar
+ *    fora da data — hora 25, minuto 70 — e tambem o mes 13, que o motor recusa em
+ *    vez de transbordar.
+ *
+ * A conferencia de calendario reusa a funcao do campo irmao em vez de reserializar
+ * aqui: a regra de "esta data de calendario existe?" vive em UM lugar so.
+ */
+function temFormaEInstanteDeDataEHora(texto: string): boolean {
+  if (!FORMATO_DE_DATA_E_HORA.test(texto)) {
+    return false;
+  }
+
+  if (comoDataCivilUtc(texto.slice(0, TAMANHO_DA_DATA_CIVIL)) === null) {
+    return false;
+  }
+
+  return !Number.isNaN(new Date(texto).getTime());
+}
+
+/**
+ * RN-47 — o token de concorrencia, na mesma precedencia dos demais campos: em
+ * branco e "obrigatório" (CT-09) e so o que TEM conteudo mas nao e uma data e
+ * hora existente e "formato inválido".
+ */
+function medirMarcaDeAlteracao(texto: string, contexto: z.RefinementCtx): void {
+  if (texto.length === 0) {
+    contexto.addIssue({ code: z.ZodIssueCode.custom, message: MESSAGES.FIELD_REQUIRED });
+
+    return;
+  }
+
+  if (!temFormaEInstanteDeDataEHora(texto)) {
+    contexto.addIssue({ code: z.ZodIssueCode.custom, message: MESSAGES.INVALID_UPDATED_AT });
+  }
+}
+
+/**
+ * O valor que sai daqui e a `Date` que a atualizacao condicional compara com a
+ * coluna `updated_at` — o service nao reparseia texto nenhum.
+ *
+ * NAO e leitura de relogio, e por isso nao viola a regra de que a hora atual so
+ * sai de `~/utils/clock.ts`: o instante vem inteiro do texto recebido.
+ */
+const marcaDeAlteracaoSchema = z
+  .string({
+    required_error: MESSAGES.FIELD_REQUIRED,
+    invalid_type_error: MESSAGES.FIELD_REQUIRED,
+  })
+  .transform((valor) => valor.trim())
+  .superRefine(medirMarcaDeAlteracao)
+  .transform((texto) => new Date(texto));
+
+/**
+ * `keepImageIds` como o multipart o entrega: TEXTO contendo uma lista JSON.
+ *
+ * Um array de verdade nao trafega em `multipart/form-data` — o que existe do
+ * outro lado sao partes com o mesmo nome, que o parser entregaria como
+ * `string[]` sem nenhuma garantia de ORDEM, e a ordem e justamente o significado
+ * do campo (a primeira imagem e a capa, RN-35). O texto JSON preserva a ordem e
+ * permite distinguir "lista vazia" de "campo ausente", coisa que partes repetidas
+ * nao permitem: zero partes e ausencia, e "remover todas" precisa ser dizivel.
+ *
+ * Devolve `null` — e nao lanca — em JSON malformado, em JSON que nao e lista e em
+ * item sem forma de UUID: as tres condicoes sao o MESMO problema para quem
+ * preenche ("isto nao e uma lista de identificadores") e produzem uma unica
+ * mensagem, no unico lugar da tela onde ela cabe.
+ */
+function comoListaDeIdentificadores(texto: string): ReadonlyArray<string> | null {
+  let decodificado: unknown;
+
+  try {
+    decodificado = JSON.parse(texto);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(decodificado)) {
+    return null;
+  }
+
+  /**
+   * `Array.isArray` sobre `unknown` estreita para `any[]`, e `any` e proibido no
+   * projeto. A reatribuicao para `ReadonlyArray<unknown>` desfaz isso em uma
+   * linha e obriga a checagem item a item logo abaixo.
+   */
+  const itens: ReadonlyArray<unknown> = decodificado;
+  const identificadores: string[] = [];
+
+  for (const item of itens) {
+    if (typeof item !== 'string' || !FORMATO_DE_UUID.test(item)) {
+      return null;
+    }
+
+    identificadores.push(item);
+  }
+
+  return identificadores;
+}
+
+/**
+ * A PRECEDENCIA das tres mensagens, e ela e o motivo de haver `superRefine` aqui:
+ *
+ *   1. em branco             -> obrigatorio (CT-09)
+ *   2. nao e lista de UUID   -> formato invalido
+ *   3. identificador repetido -> repeticao
+ *
+ * `""` e AUSENTE e nao lista vazia: o formulario envia `"[]"` quando o
+ * administrador removeu todas as imagens, e o campo em branco e um formulario que
+ * simplesmente nao montou o campo. Tratar os dois como iguais faria uma requisicao
+ * incompleta APAGAR todas as imagens do animal em silencio — o desfecho mais
+ * destrutivo possivel para o erro mais banal.
+ *
+ * A repeticao e recusada e nao deduplicada: a lista E a ordem final, e uma imagem
+ * nao pode ocupar duas posicoes. Ver `DUPLICATED_KEEP_IMAGE_ID`.
+ *
+ * A PERTINENCIA de cada identificador ao animal NAO e verificada aqui e nao tem
+ * como ser: o schema nao conhece o banco. Ela e do service, que ja leu o animal
+ * com as suas imagens (CT-62).
+ */
+function medirImagensMantidas(texto: string, contexto: z.RefinementCtx): void {
+  if (texto.length === 0) {
+    contexto.addIssue({ code: z.ZodIssueCode.custom, message: MESSAGES.FIELD_REQUIRED });
+
+    return;
+  }
+
+  const identificadores = comoListaDeIdentificadores(texto);
+
+  if (identificadores === null) {
+    contexto.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: MESSAGES.INVALID_KEEP_IMAGE_IDS,
+    });
+
+    return;
+  }
+
+  if (new Set(identificadores).size !== identificadores.length) {
+    contexto.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: MESSAGES.DUPLICATED_KEEP_IMAGE_ID,
+    });
+  }
+}
+
+/**
+ * O `?? []` do `transform` NAO e um caminho de sucesso: ele so e alcancado quando
+ * `medirImagensMantidas` ja registrou um problema, e o parse inteiro reprova
+ * depois dele. Existe porque o `transform` do Zod roda mesmo com o resultado ja
+ * sujo, e lancar dali trocaria um `400` com `details` por um `500`. Mesmo desenho
+ * ja aplicado em `dataDeNascimentoSchema`.
+ */
+const imagensMantidasSchema = z
+  .string({
+    required_error: MESSAGES.FIELD_REQUIRED,
+    invalid_type_error: MESSAGES.FIELD_REQUIRED,
+  })
+  .transform((valor) => valor.trim())
+  .superRefine(medirImagensMantidas)
+  .transform((texto): ReadonlyArray<string> => comoListaDeIdentificadores(texto) ?? []);
+
+/**
  * Objeto que RECUSA qualquer chave nao declarada (RN-46, CT-13, CT-14).
  *
  * NAO usa `.strict()`, pela mesma razao ja registrada em `species.validators.ts`
@@ -597,7 +798,7 @@ function objetoSemCamposExtras<Forma extends z.ZodRawShape>(forma: Forma) {
  * forte (RN-26a): o estado do animal e o estado da sua cidade, e o par incoerente
  * "Campo Magro - ES" nao e validado, e INEXPRIMIVEL no contrato.
  */
-export const createAnimalBodySchema = objetoSemCamposExtras({
+const CAMPOS_DO_ANIMAL = {
   name: nomeDoAnimalSchema,
   speciesId: identificadorObrigatorioSchema,
   size: conjuntoFechado(PORTES),
@@ -607,9 +808,38 @@ export const createAnimalBodySchema = objetoSemCamposExtras({
   description: descricaoSchema,
   acceptsOtherAnimals: alternanciaSchema,
   needsLargeSpace: alternanciaSchema,
+};
+
+export const createAnimalBodySchema = objetoSemCamposExtras(CAMPOS_DO_ANIMAL);
+
+/**
+ * ============================================================================
+ * Corpo do `PATCH /api/animals/:id` (RN-35, RN-47, RN-50, contrato de edicao)
+ * ============================================================================
+ *
+ * OS MESMOS campos do cadastro, mais dois — e "os mesmos" e literal: a forma vem
+ * do proprio `CAMPOS_DO_ANIMAL`, e nao de uma copia. Reescrever os nove campos
+ * aqui faria a primeira revisao do limite do nome, do fuso da data ou do
+ * vocabulario de porte valer no cadastro e nao valer na edicao, e o defeito so
+ * apareceria pelo lado que ninguem testou.
+ *
+ * `status` continua FORA (RN-16, CT-68), e continua fora pelo mesmo mecanismo do
+ * cadastro: nao esta na forma, entao cai na recusa de chave nao prevista com
+ * "Campo não permitido nesta requisição.". A alteracao de status e operacao
+ * propria, com endpoint proprio (TASK-BACKEND-009).
+ *
+ * `id` tambem nao esta na forma, e a ausencia e a RN-06: o identificador do
+ * animal e estavel, entao ele vive no CAMINHO (`animalIdParamsSchema`) e nunca no
+ * corpo — nao ha por onde a edicao renomear o recurso que ela edita.
+ */
+export const updateAnimalBodySchema = objetoSemCamposExtras({
+  ...CAMPOS_DO_ANIMAL,
+  updatedAt: marcaDeAlteracaoSchema,
+  keepImageIds: imagensMantidasSchema,
 });
 
 /** Tipos derivados dos schemas: nenhum DTO duplicando a mesma forma. */
 export type ListAnimalsQuery = z.infer<typeof listAnimalsQuerySchema>;
 export type AnimalIdParams = z.infer<typeof animalIdParamsSchema>;
 export type CreateAnimalBody = z.infer<typeof createAnimalBodySchema>;
+export type UpdateAnimalBody = z.infer<typeof updateAnimalBodySchema>;

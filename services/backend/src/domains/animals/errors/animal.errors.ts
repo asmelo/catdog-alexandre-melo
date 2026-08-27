@@ -1,5 +1,5 @@
 import { MESSAGES } from '~/domains/animals/animals.messages';
-import { NotFoundError } from '~/shared/errors/http-errors';
+import { ConflictError, NotFoundError } from '~/shared/errors/http-errors';
 
 /**
  * Erros de dominio do ANIMAL (o recurso), separados dos de
@@ -14,9 +14,8 @@ import { NotFoundError } from '~/shared/errors/http-errors';
  * `FORBIDDEN` e `SESSION_EXPIRED` NAO ganham classe aqui: continuam sendo
  * produzidos pelos middlewares transversais de autorizacao e autenticacao.
  *
- * A TASK-BACKEND-007 acrescentou `CITY_NOT_FOUND`; o `ANIMAL_STALE_UPDATE` do
- * bloqueio otimista entra neste mesmo arquivo na TASK-BACKEND-008 — nao
- * antecipado aqui.
+ * A TASK-BACKEND-007 acrescentou `CITY_NOT_FOUND` e a TASK-BACKEND-008
+ * acrescentou o `ANIMAL_STALE_UPDATE` do bloqueio otimista.
  */
 
 /**
@@ -58,5 +57,32 @@ export class AnimalNotFoundError extends NotFoundError {
 export class CityNotFoundError extends NotFoundError {
   constructor() {
     super(MESSAGES.CITY_NOT_FOUND, 'CITY_NOT_FOUND');
+  }
+}
+
+/**
+ * RN-47 / RN-48 — o animal foi alterado por outra pessoa entre a leitura que
+ * alimentou o formulario e a gravacao.
+ *
+ * 409 e nao 400, e a distincao e a razao de a classe existir: nao ha nada de
+ * errado com o corpo enviado — cada campo dele e valido. O que impede a gravacao
+ * e o ESTADO ATUAL do recurso, que ja nao e o estado sobre o qual o
+ * administrador decidiu. Um 400 mandaria a interface procurar campo a corrigir;
+ * um 409 diz para recarregar.
+ *
+ * DISTINTO DE `AnimalNotFoundError`, e a distincao nao e cosmetica (CT-64): a
+ * atualizacao condicional devolve `count === 0` tanto quando o registro MUDOU
+ * quanto quando ele SUMIU, e as duas respostas levam a interface a caminhos
+ * diferentes — recarregar o formulario contra a versao atual, ou voltar para a
+ * listagem porque o animal ja nao existe. Quem separa os dois casos e o service,
+ * com uma releitura depois do desfazimento da transacao; o repositorio continua
+ * apenas contando linhas.
+ *
+ * Nada e alterado quando ela e lancada (RN-48): a transacao inteira e desfeita
+ * antes, e os objetos que ja tinham subido ao armazenamento sao removidos.
+ */
+export class AnimalStaleUpdateError extends ConflictError {
+  constructor() {
+    super(MESSAGES.ANIMAL_STALE_UPDATE, 'ANIMAL_STALE_UPDATE');
   }
 }
