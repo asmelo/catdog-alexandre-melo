@@ -57,7 +57,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 | 001 backend schema animais/estados/cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 20 suítes / 270 testes | `6e7910f` |
 | 002 backend carga de estados e municípios | **concluída** — 3 rodadas (1 reprovação), aprovada na 3ª | typecheck exit 0; 20 suítes / 270 testes; **27 UFs / 5571 municípios** carregados | `a396314` |
 | 003 backend multipart, limites e assinatura | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; **21 suítes / 282 testes** | `78359ad` |
-| 004 backend porta de armazenamento + Supabase | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; **24 suítes / 314 testes**; `src/infra/storage` em 100% | ver `git log` |
+| 004 backend porta de armazenamento + Supabase | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; **24 suítes / 314 testes**; `src/infra/storage` em 100% | `0445a29` |
+| 005 backend endpoints de estados e cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -307,6 +308,20 @@ rascunho novo com o mesmo `id`, e a gravação antiga pousaria na sessão errada
 escondeu o caso. Resolvido com sequência de **escrita** por espécie (o marcador só avança no sucesso: gravação que
 falhou não mudou nada no servidor e não pode barrar o retrato de uma escrita anterior que deu certo).
 
+**F2/TASK-BACKEND-005** — domínio `geography` novo (catálogo, erros, validadores, repositório, dois services,
+controller, rotas) e `src/routes/index.ts` com **+2 linhas**. Verificado contra o banco real: `Boa Esperança`
+aparece **uma vez em cada** UF (ES/MG/PR) com três `id` distintos; `DF` traz `Brasília`; e a ordem devolvida bate
+com `localeCompare('pt-BR')` e **não** com a binária — no PR, `Ângulo` aparece entre `Andirá` e `Antonina`, e a
+comparação binária o empurraria para depois do `Z`.
+
+A não-unicidade de nome é inofensiva **por construção**: a única leitura de `cities` é `where: { stateId }`, e
+nenhum ponto do código consulta cidade por nome. Ordenação toda no banco, zero `sort()` em memória — um `sort()`
+reintroduziria a comparação binária que o banco já evita.
+
+**Sem filtro por texto nesta task**, então a decisão sobre sensibilidade a acento **não foi tomada** e fica pendente
+para quem introduzir busca de município. Registro do que importa: o índice é `(stateId, name)` sobre a coluna
+**acentuada**, então um `unaccent` futuro **não** o usaria.
+
 ## ⚠️ AÇÃO DO DONO DO PROJETO — o backend não sobe sem credencial de armazenamento
 
 A TASK-004 tornou `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` **obrigatórias, sem `.optional()`** — é o que a task
@@ -321,7 +336,29 @@ socket) e, portanto, o andamento das tasks.
 
 Nenhuma chave foi inventada e o `.env` real não foi tocado; o `.env.example` recebeu placeholder.
 
+## Padrão observado: tasks escritas antes do código prescrevem coisas que não sobrevivem ao projeto real
+
+Quatro casos até aqui, todos resolvidos divergindo da task e **emendando o texto dela**, para que a próxima leitura
+não reintroduza o erro:
+
+1. `.strict()` do Zod produz `field: ""` (o `unrecognized_keys` sai com `path: []`) — FEATURE-001.
+2. `@supabase/supabase-js` derruba o boot no Node 20 e o `npm install` não avisa — F2/TASK-004.
+3. `authorizeRole('ADMIN')` **não compila**: `'ADMIN'` é o enum do banco, `'admin'` é o literal público — F2/TASK-005.
+4. A cadeia `.length(2).regex(...)` **acumula** e produz `details` com a mesma mensagem duas vezes — ou seja,
+   **a seção de implementação reprovaria o critério de aceite do mesmo documento** — F2/TASK-005.
+
 ## Achados a repassar para tasks futuras
+
+- **F2/TASK-BACKEND-011 — `tests/fakes/prisma-double.ts` não tem os modelos `state` nem `city`.** Ou estende o
+  duplo, ou injeta pelo parâmetro `dependencias?` da fábrica. **Armadilha do segundo caminho (já provada):** a
+  fábrica roda no import de `geography.routes.ts`, então o duplo precisa ser criado por *function declaration*
+  hoisted, não por `class` declarada depois do `import { app }` — senão cai na zona morta temporal.
+- **F2/TASK-BACKEND-011 — `PrismaStateRepository.withTransaction` nasce sem chamador** e ficará descoberto.
+- **Verificar "nenhuma linha executável mudou" em arquivo NOVO não funciona com `git show HEAD:`** — o arquivo é
+  untracked, o git não tem baseline, e a checagem retorna vazio dando falso positivo. Use cópia reconstruída ou
+  compare o JS emitido com `--removeComments`.
+- **Emenda pendente na TASK-005**, fora do escopo autorizado da correção: a L91 ainda afirma que `authorizeRole`
+  "nunca foi montado por rota alguma" — falso, `species.routes.ts` o monta em quatro pontos.
 
 - **F2/TASK-BACKEND-007 — EXIGÊNCIA DE CONCORRÊNCIA, já emendada no texto da task.** O adaptador tem timeout de
   **20 s por chamada**. Cinco envios **em série somam 100 s — 3,3× acima dos 30 s do RNF-13**. A implementação óbvia

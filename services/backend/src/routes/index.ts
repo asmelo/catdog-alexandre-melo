@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 
 import { authRoutes } from '~/domains/auth/auth.routes';
+import { geographyRoutes } from '~/domains/geography/geography.routes';
 import { speciesRoutes } from '~/domains/species/species.routes';
 import { HTTP_STATUS } from '~/shared/http/http-status';
 
@@ -17,3 +18,4 @@ router.get('/health', (_requisicao: Request, resposta: Response) => {
 
 router.use('/auth', authRoutes);
 router.use('/species', speciesRoutes);
+router.use('/states', geographyRoutes);
