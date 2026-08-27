@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { AnimalImage, AnimalSex, AnimalSize, Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * Porta de acesso a `animals`. Como nos repositorios dos dominios auth, species
@@ -9,8 +9,9 @@ import type { Prisma, PrismaClient } from '@prisma/client';
  * O repositorio NAO lanca erro HTTP: ausencia e `null`, e quem decide se `null`
  * e um problema e o service.
  *
- * Escopo desta fatia: SO LEITURA. Criacao, edicao, alteracao de status e
- * exclusao entram neste mesmo arquivo nas TASK-BACKEND-007 a 009.
+ * A TASK-BACKEND-007 acrescentou a CRIACAO (`create` e `createImages`); edicao,
+ * alteracao de status e exclusao entram neste mesmo arquivo nas TASK-BACKEND-008
+ * e 009.
  */
 
 /**
@@ -106,6 +107,55 @@ export interface AnimalPage {
   readonly total: number;
 }
 
+/**
+ * Linha de `animals` pronta para o `INSERT`. E a forma da TABELA, e nao a do
+ * pedido do administrador: `nameNormalized` ja vem derivado, `size` e `sex` ja
+ * sao os literais do enum do banco e `birthDate` ja e a data civil em UTC. O
+ * repositorio nao normaliza, nao traduz vocabulario e nao le relogio.
+ *
+ * `id` E PARAMETRO e nao fica a cargo do `@default(uuid())` do schema. A razao e
+ * o caminho do objeto no armazenamento: `animals/<id>/<uuid>.<ext>` precisa do
+ * identificador do animal ANTES do `INSERT`, porque as imagens sobem antes da
+ * transacao (RN-52). Deixar o banco gerar obrigaria a inverter a ordem — gravar o
+ * animal, subir as imagens e so entao gravar as linhas de imagem —, o que
+ * manteria a transacao aberta durante ate 20 s de rede por objeto.
+ *
+ * `status` NAO entra: o animal nasce `DISPONIVEL` pelo default do schema (RN-14),
+ * e um parametro aqui seria a porta pela qual o cadastro escolheria o estado
+ * inicial.
+ */
+export interface CreateAnimalData {
+  readonly id: string;
+  readonly name: string;
+  readonly nameNormalized: string;
+  readonly speciesId: string;
+  readonly cityId: string;
+  readonly size: AnimalSize;
+  readonly sex: AnimalSex;
+  readonly birthDate: Date | null;
+  readonly description: string | null;
+  readonly acceptsOtherAnimals: boolean;
+  readonly needsLargeSpace: boolean;
+}
+
+/**
+ * Linha de `animal_images` pronta para o `INSERT`.
+ *
+ * `storagePath` ja vem de `buildAnimalImageObjectPath` e `contentType` ja vem da
+ * assinatura binaria — o repositorio nao gera caminho nem apura formato. `id` e
+ * parametro pelo mesmo motivo do animal: ele ja compoe o caminho do objeto que
+ * subiu, e deixar o banco gerar outro faria a linha apontar para lugar nenhum.
+ *
+ * `position` e a ordem de envio, base ZERO. A posicao `0` e a capa (RN-35).
+ */
+export interface CreateAnimalImageData {
+  readonly id: string;
+  readonly storagePath: string;
+  readonly position: number;
+  readonly contentType: string;
+  readonly sizeBytes: number;
+}
+
 export interface AnimalRepository {
   /**
    * Uma pagina da listagem administrativa, na ordenacao da RN-41, mais o total.
@@ -120,6 +170,31 @@ export interface AnimalRepository {
    * `null` — e o service que decide se isso e um problema (RN-44).
    */
   findById(id: string): Promise<AnimalWithRelations | null>;
+  /**
+   * Grava a linha do animal e devolve o registro JA com as tres relacoes
+   * resolvidas — a mesma forma que a leitura entrega, para que a resposta do
+   * `POST` passe pelo MESMO `toAnimalResponse` da consulta e nenhuma serializacao
+   * seja duplicada.
+   *
+   * `images` vem vazio deste metodo, e sempre: as linhas de imagem sao gravadas
+   * logo em seguida por `createImages`, dentro da mesma transacao.
+   */
+  create(data: CreateAnimalData): Promise<AnimalWithRelations>;
+  /**
+   * Grava as linhas de `animal_images` do animal `animalId` e devolve as linhas
+   * gravadas, na ordem em que foram entregues.
+   *
+   * Devolve as linhas (e nao apenas a contagem) porque quem chama precisa delas
+   * para montar a resposta sem uma segunda leitura do animal inteiro — releitura
+   * que, dentro da transacao, custaria mais uma ida ao banco por cadastro.
+   *
+   * Lista vazia e chamada VALIDA e devolve `[]` sem tocar o banco: um animal com
+   * zero imagem e um cadastro legitimo (RN-30), nao um caso de contingencia.
+   */
+  createImages(
+    animalId: string,
+    images: ReadonlyArray<CreateAnimalImageData>,
+  ): Promise<ReadonlyArray<AnimalImage>>;
   /**
    * Mesma porta ligada a uma transacao em andamento.
    *
@@ -212,6 +287,80 @@ export class PrismaAnimalRepository implements AnimalRepository {
    */
   async findById(id: string): Promise<AnimalWithRelations | null> {
     return this.db.animal.findUnique({ where: { id }, include: INCLUIR_RELACOES });
+  }
+
+  /**
+   * O `data` lista os campos um a um em vez de repassar o objeto recebido: e o
+   * que impede uma chave inesperada de virar coluna gravada caso a forma de
+   * `CreateAnimalData` cresca. Mesmo cuidado ja registrado em
+   * `species.repository.ts`.
+   *
+   * `status` nao aparece — vem do `@default(DISPONIVEL)` do schema (RN-14) —, e
+   * `createdAt`/`updatedAt` tampouco: quem os grava e o proprio Prisma, entao
+   * nenhum `new Date()` participa do cadastro.
+   *
+   * A referencia a especie e a cidade e feita por `speciesId`/`cityId` diretos e
+   * nao por `connect`: as duas chaves ja foram resolvidas pelo caso de uso, e o
+   * `connect` emitiria um `SELECT` a mais por relacao para reconferir o que ja se
+   * sabe. A integridade continua garantida — a FK RESTRITIVA do schema recusa o
+   * `INSERT` se a especie ou a cidade sumirem entre a leitura e a gravacao.
+   */
+  async create(data: CreateAnimalData): Promise<AnimalWithRelations> {
+    return this.db.animal.create({
+      data: {
+        id: data.id,
+        name: data.name,
+        nameNormalized: data.nameNormalized,
+        speciesId: data.speciesId,
+        cityId: data.cityId,
+        size: data.size,
+        sex: data.sex,
+        birthDate: data.birthDate,
+        description: data.description,
+        acceptsOtherAnimals: data.acceptsOtherAnimals,
+        needsLargeSpace: data.needsLargeSpace,
+      },
+      include: INCLUIR_RELACOES,
+    });
+  }
+
+  /**
+   * `createManyAndReturn` e nao `createMany`: o `createMany` devolve apenas
+   * `{ count }`, e quem chama precisa das linhas (com o `createdAt` que so o
+   * banco conhece) para montar a resposta. Tambem nao e um `create` por imagem —
+   * cinco idas ao banco DENTRO da transacao, com o pooler de conexao unica do
+   * Supabase, sao cinco vezes mais tempo com ela aberta.
+   *
+   * A ORDEM DO RETORNO NAO E CONTRATO. Este metodo devolve o que o `RETURNING`
+   * do `INSERT` devolveu, e o padrao SQL nao promete que isso seja a ordem dos
+   * dados enviados — o Postgres o faz na pratica, e e so isso. Quem PRECISA da
+   * ordem por `position` a estabelece: a leitura pelo `orderBy` do `include`
+   * (`INCLUIR_RELACOES`, acima) e o cadastro por um `sort` explicito sobre as no
+   * maximo cinco linhas (`create-animal.service.ts`). Nao apoie a resposta na
+   * ordem observada aqui.
+   *
+   * A saida EXPLICITA na lista vazia nao e microtimizacao: `createManyAndReturn`
+   * com `data: []` emite um `INSERT ... VALUES` sem tuplas, que o Postgres recusa
+   * com erro de sintaxe. Um animal sem imagem (RN-30) viraria 500.
+   */
+  async createImages(
+    animalId: string,
+    images: ReadonlyArray<CreateAnimalImageData>,
+  ): Promise<ReadonlyArray<AnimalImage>> {
+    if (images.length === 0) {
+      return [];
+    }
+
+    return this.db.animalImage.createManyAndReturn({
+      data: images.map((imagem) => ({
+        id: imagem.id,
+        animalId,
+        storagePath: imagem.storagePath,
+        position: imagem.position,
+        contentType: imagem.contentType,
+        sizeBytes: imagem.sizeBytes,
+      })),
+    });
   }
 
   withTransaction(executor: Prisma.TransactionClient): AnimalRepository {

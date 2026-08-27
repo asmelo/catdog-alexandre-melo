@@ -59,7 +59,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 | 003 backend multipart, limites e assinatura | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; **21 suítes / 282 testes** | `78359ad` |
 | 004 backend porta de armazenamento + Supabase | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; **24 suítes / 314 testes**; `src/infra/storage` em 100% | `0445a29` |
 | 005 backend endpoints de estados e cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `4e799d3` |
-| 006 backend leitura de animais, paginação e idade | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
+| 006 backend leitura de animais, paginação e idade | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 24 suítes / 314 testes | `febeb92` |
+| 007 backend criação de animal com upload | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -348,6 +349,26 @@ com lista vazia, e desenharia a fronteira num detalhe de armazenamento em vez de
 Verificações da revisão que valem registro: 500 animais percorridos em 25 páginas por HTTP com **500 ids
 distintos**, `EXPLAIN` do plano real, e log do Prisma confirmando `BEGIN → findMany → COUNT → COMMIT` através do
 pgbouncer.
+
+**F2/TASK-BACKEND-007** — `POST /api/animals` com upload, o pipeline de imagens, o cálculo de `nameNormalized` e a
+primeira montagem do middleware de multipart em rota. `animals.messages.ts` foi de **13 para 22 chaves**, só por
+apêndice.
+
+**A exigência de concorrência foi cumprida e medida:** `maximoEmVoo = 5`, 62 ms contra ~302 ms do laço serial. E o
+caso que importa foi construído pela revisão — falha da imagem **mais rápida** entre cinco de durações diferentes
+(120/200/**20**/260/320 ms): o primeiro `remove` acontece em @322 ms, **depois** dos cinco `fim:`, com **zero
+órfãos**. Com `Promise.all` a compensação teria disparado em @21 ms com quatro envios ainda em voo, produzindo
+exatamente os órfãos que o CT-55 barra.
+
+**Oito das nove alegações do agente de que a task prescreve algo que não funciona procederam** e viraram emenda no
+texto. **Uma NÃO procedeu:** `.min(2).max(60)` produz **um** problema, não dois — mínimo e máximo nunca disparam
+juntos sobre o mesmo comprimento. O `superRefine` continua certo por outras razões (precedência de três mensagens e
+a segunda medição sobre `toLowerCase().length`, onde `'İ'×60` mede 60 e vira 120). **O comentário foi corrigido e
+a task NÃO foi emendada com a afirmação falsa.**
+
+Corrigido também um segundo comentário normativo que afirmava mecanismo inexistente: o repositório dizia que o
+`RETURNING` "preserva a ordem dos dados enviados" — comportamento observado do Postgres, não contrato SQL. A ordem
+das imagens no `POST` passou a ser garantida por `sort` explícito.
 
 ## ⚠️ AÇÃO DO DONO DO PROJETO — o backend não sobe sem credencial de armazenamento
 

@@ -1,17 +1,29 @@
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler } from 'express';
 
 import type {
   AnimalIdParams,
+  CreateAnimalBody,
   ListAnimalsQuery,
 } from '~/domains/animals/animals.validators';
 import type { AnimalResponse } from '~/domains/animals/mappers/animal.mapper';
 import { PrismaAnimalRepository } from '~/domains/animals/repositories/animal.repository';
+import { CreateAnimalService } from '~/domains/animals/services/create-animal.service';
 import { GetAnimalService } from '~/domains/animals/services/get-animal.service';
 import {
   ListAnimalsService,
   type ListAnimalsResult,
 } from '~/domains/animals/services/list-animals.service';
+import {
+  StoreAnimalImagesService,
+  type AnimalImageUpload,
+} from '~/domains/animals/services/store-animal-images.service';
+import { PrismaStateRepository } from '~/domains/geography/repositories/state.repository';
+import { PrismaSpeciesRepository } from '~/domains/species/repositories/species.repository';
 import { prisma } from '~/infra/prisma/prisma-client';
+import {
+  createSupabaseStorageClient,
+  SupabaseImageStorage,
+} from '~/infra/storage/supabase-image-storage';
 import { HTTP_STATUS } from '~/shared/http/http-status';
 
 /**
@@ -24,10 +36,11 @@ import { HTTP_STATUS } from '~/shared/http/http-status';
  * corpo de resposta de erro. E por isso que o `404 ANIMAL_NOT_FOUND` do
  * `GetAnimalService` nao aparece em lugar nenhum deste arquivo.
  *
- * Os handlers de escrita entram neste mesmo arquivo nas TASK-BACKEND-007 a 009.
+ * A TASK-BACKEND-007 acrescentou o handler de CRIACAO; os de edicao, alteracao de
+ * status e exclusao entram neste mesmo arquivo nas TASK-BACKEND-008 e 009.
  */
 
-/** `GET /` nao tem parametro de caminho. */
+/** `GET /` e `POST /` nao tem parametro de caminho. */
 type SemParametros = Record<string, never>;
 
 /**
@@ -44,6 +57,40 @@ type SemParametros = Record<string, never>;
 type ManipuladorDeLista = RequestHandler<SemParametros, ListAnimalsResult, unknown>;
 
 type ManipuladorDeConsulta = RequestHandler<AnimalIdParams, AnimalResponse, unknown>;
+
+/**
+ * O corpo do `POST` chega JA parseado e REATRIBUIDO por `createAnimalBodySchema`
+ * dentro do `validateRequest`, entao o handler le `name` como texto normalizado,
+ * `birthDate` como `Date | null` e as alternancias como booleanos — nada de
+ * `Boolean(req.body.x)` nem `new Date(...)` aqui.
+ */
+type ManipuladorDeCriacao = RequestHandler<SemParametros, AnimalResponse, CreateAnimalBody>;
+
+/**
+ * Traduz os arquivos que o `uploadAnimalImages` deixou em `req.files` para a
+ * forma que o service consome. E TRADUCAO DE TRANSPORTE, e nao regra: nenhuma
+ * validacao de tamanho, de formato ou de quantidade acontece aqui.
+ *
+ * O NOME DO ARQUIVO E O `mimetype` DECLARADOS SAO DESCARTADOS neste ponto, e e
+ * deliberado: os dois sao escritos por quem envia, e nao ha camada adiante que
+ * possa usa-los por engano se eles nao atravessarem a fronteira (RN-34, RN-52).
+ *
+ * `Array.isArray` e a checagem correta e nao um `?? []`: o tipo de `req.files` do
+ * `@types/multer` e a uniao entre o array de `.array()` e o mapa por campo de
+ * `.fields()`, mais `undefined` quando a requisicao nao trouxe arquivo nenhum —
+ * o `[]` cobre os dois casos que nao sao a lista, e "nenhuma imagem" e um
+ * cadastro perfeitamente valido (RN-30).
+ */
+function imagensEnviadas(arquivos: Request['files']): ReadonlyArray<AnimalImageUpload> {
+  if (!Array.isArray(arquivos)) {
+    return [];
+  }
+
+  return arquivos.map((arquivo) => ({
+    content: arquivo.buffer,
+    sizeBytes: arquivo.size,
+  }));
+}
 
 /**
  * Le a query JA VALIDADA. NAO valida, nao coage e nao aplica padrao — tudo isso
@@ -77,6 +124,7 @@ function paginacaoJaValidada(query: unknown): ListAnimalsQuery {
 export interface AnimalsControllerDependencies {
   readonly listAnimals: ListAnimalsService;
   readonly getAnimal: GetAnimalService;
+  readonly createAnimal: CreateAnimalService;
 }
 
 export class AnimalsController {
@@ -112,6 +160,38 @@ export class AnimalsController {
 
     resposta.status(HTTP_STATUS.OK).json(animal);
   };
+
+  /**
+   * `201` com a representacao do animal criado (CT-01, CT-02, CA-10, CA-11).
+   *
+   * UM service e nada mais. Toda a regra — limite de imagens, existencia de
+   * especie e de cidade, envio concorrente ao armazenamento, transacao e
+   * compensacao — vive no `CreateAnimalService`; aqui ha apenas a leitura do
+   * corpo ja validado, a traducao dos arquivos e o status da resposta.
+   *
+   * Os desfechos de falha (`400`, `404`, `413`, `415`, `503`) nao aparecem em
+   * lugar nenhum deste metodo: os services lancam subclasse de `AppError` e o
+   * `error-handler.middleware.ts` continua sendo o unico ponto que monta corpo de
+   * resposta de erro.
+   */
+  readonly create: ManipuladorDeCriacao = async (requisicao, resposta) => {
+    const corpo = requisicao.body;
+
+    const animal = await this.services.createAnimal.execute({
+      name: corpo.name,
+      speciesId: corpo.speciesId,
+      cityId: corpo.cityId,
+      size: corpo.size,
+      sex: corpo.sex,
+      birthDate: corpo.birthDate,
+      description: corpo.description,
+      acceptsOtherAnimals: corpo.acceptsOtherAnimals,
+      needsLargeSpace: corpo.needsLargeSpace,
+      images: imagensEnviadas(requisicao.files),
+    });
+
+    resposta.status(HTTP_STATUS.CREATED).json(animal);
+  };
 }
 
 /**
@@ -136,8 +216,25 @@ export function createAnimalsController(
 
   const animals = new PrismaAnimalRepository(prisma, prisma);
 
+  /**
+   * O adaptador REAL do armazenamento e montado aqui, e o cliente de rede e
+   * construido UMA vez no import — nunca por requisicao, o que jogaria fora o
+   * `keep-alive` das conexoes justamente num envio de ate 25 MB.
+   *
+   * Os testes nao passam por este ramo: eles entram pelo parametro `dependencias`
+   * com o `FakeImageStorage`, que implementa a mesma porta e nunca toca a rede.
+   */
+  const storage = new SupabaseImageStorage(createSupabaseStorageClient());
+
   return new AnimalsController({
     listAnimals: new ListAnimalsService(animals),
     getAnimal: new GetAnimalService(animals),
+    createAnimal: new CreateAnimalService(
+      animals,
+      new PrismaSpeciesRepository(prisma),
+      new PrismaStateRepository(prisma),
+      new StoreAnimalImagesService(storage),
+      prisma,
+    ),
   });
 }

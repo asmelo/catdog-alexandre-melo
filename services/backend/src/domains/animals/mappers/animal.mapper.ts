@@ -173,9 +173,18 @@ export function toAnimalResponse(animal: AnimalWithRelations, now: Date): Animal
     },
 
     /**
-     * A ORDEM VEM DO BANCO (`orderBy: { position: 'asc' }` do `include`) e nao
-     * de um `sort` aqui: reordenar neste ponto duplicaria a regra da RN-35 num
-     * segundo lugar, onde ela poderia divergir do repositorio.
+     * A ORDEM VEM PRONTA DE QUEM CHAMA, e nao de um `sort` aqui: reordenar neste
+     * ponto duplicaria a regra da RN-35 num segundo lugar, onde ela poderia
+     * divergir de quem monta a lista.
+     *
+     * E vem por DOIS caminhos diferentes, o que importa saber antes de "unificar"
+     * qualquer um deles:
+     *
+     * - LEITURA (`listPaginated`, `findById`): pelo `orderBy: { position: 'asc' }`
+     *   do `include` do repositorio — o banco entrega ordenado.
+     * - CADASTRO (`create-animal.service.ts`): por um `sort` explicito, porque as
+     *   linhas vem do `RETURNING` do `createManyAndReturn` e nao passam por
+     *   `include` nenhum. A ordem do `RETURNING` nao e garantida pelo padrao SQL.
      */
     images: animal.images.map((imagem) => ({
       id: imagem.id,

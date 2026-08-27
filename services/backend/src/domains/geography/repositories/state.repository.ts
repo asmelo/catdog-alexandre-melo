@@ -53,6 +53,27 @@ export interface StateRepository {
    */
   listCitiesByStateId(stateId: string): Promise<ReadonlyArray<City>>;
   /**
+   * Consulta o municipio pela CHAVE PRIMARIA (RN-26).
+   *
+   * Acrescentado pela TASK-BACKEND-007: a gravacao do animal precisa afirmar que
+   * a cidade recebida existe, e nenhum dos dois metodos acima responde a essa
+   * pergunta — `listCitiesByStateId` exigiria o estado, que o contrato do animal
+   * deliberadamente NAO recebe (RN-26a).
+   *
+   * POR `id`, JAMAIS POR NOME, e esta e a razao de o metodo existir com esta
+   * assinatura: nome de municipio se REPETE entre unidades federativas — "Boa
+   * Esperança" existe em ES (IBGE 3201001), MG (3107109) e PR (4103008), entre os
+   * 5.571 carregados. Uma resolucao por nome escolheria uma das tres em silencio
+   * e gravaria o animal na UF errada.
+   *
+   * NAO carrega o estado junto: quem chama so precisa saber se a cidade existe. O
+   * `stateUf` da resposta vem do `include` da leitura do animal, que segue a
+   * propria chave estrangeira e por isso so pode trazer o estado daquela cidade.
+   *
+   * Ausencia e `null` — e o service que decide se isso e um problema.
+   */
+  findCityById(id: string): Promise<City | null>;
+  /**
    * Mesma porta ligada a uma transacao em andamento.
    *
    * Nenhum caso de uso desta task abre transacao — as duas operacoes sao
@@ -126,6 +147,18 @@ export class PrismaStateRepository implements StateRepository {
    */
   async listCitiesByStateId(stateId: string): Promise<ReadonlyArray<City>> {
     return this.db.city.findMany({ where: { stateId }, orderBy: { name: 'asc' } });
+  }
+
+  /**
+   * `findUnique` e nao `findUniqueOrThrow`, pela mesma razao ja registrada em
+   * `findByUf`: "cidade nao encontrada" e uma resposta prevista do recurso
+   * (`404 CITY_NOT_FOUND`, RN-26), e nao uma falha de infraestrutura.
+   *
+   * O `id` chega JA validado como UUID por `createAnimalBodySchema`; o
+   * repositorio nao revalida formato.
+   */
+  async findCityById(id: string): Promise<City | null> {
+    return this.db.city.findUnique({ where: { id } });
   }
 
   withTransaction(executor: Prisma.TransactionClient): StateRepository {

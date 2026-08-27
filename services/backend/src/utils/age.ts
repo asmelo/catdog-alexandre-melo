@@ -74,6 +74,35 @@ function dataCivilNoFusoDoProduto(instante: Date): DataCivil {
 }
 
 /**
+ * Data civil de HOJE no fuso do produto, exposta para quem VALIDA a data de
+ * nascimento (RN-19) e nao apenas para quem calcula a idade (RN-20).
+ *
+ * A regra "hoje e o hoje de Sao Paulo, e nao o do processo" e UMA so, e as duas
+ * regras a consomem: a idade a usa para decidir se o aniversario ja passou, e a
+ * validacao a usa para decidir se a data informada e futura. Uma segunda leitura
+ * do fuso dentro de `animals.validators.ts` divergiria desta na primeira revisao
+ * — e divergiria justamente no caso que ninguem testa a olho, o das 22h de Sao
+ * Paulo, quando em UTC ja e o dia seguinte (CT-16, RNF-10).
+ *
+ * Os nomes das propriedades saem em INGLES, como toda superficie exportada deste
+ * projeto (`calculateAgeInYears`, `buildAnimalImageObjectPath`); a `DataCivil`
+ * interna continua em portugues, como o restante do vocabulario privado.
+ *
+ * `month` e base UM, como o calendario — nao como `Date.getMonth()`.
+ */
+export interface ProductCivilDate {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+}
+
+export function productCivilDateOf(instante: Date): ProductCivilDate {
+  const civil = dataCivilNoFusoDoProduto(instante);
+
+  return { year: civil.ano, month: civil.mes, day: civil.dia };
+}
+
+/**
  * Data civil da COLUNA `birth_date`, lida em UTC — e este e o ponto mais
  * delicado do arquivo.
  *

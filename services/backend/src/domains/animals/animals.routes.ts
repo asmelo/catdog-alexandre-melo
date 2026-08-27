@@ -3,10 +3,12 @@ import { Router } from 'express';
 import { createAnimalsController } from '~/domains/animals/animals.controller';
 import {
   animalIdParamsSchema,
+  createAnimalBodySchema,
   listAnimalsQuerySchema,
 } from '~/domains/animals/animals.validators';
 import { authenticate } from '~/middlewares/authenticate.middleware';
 import { authorizeRole } from '~/middlewares/authorize-role.middleware';
+import { uploadAnimalImages } from '~/middlewares/upload-animal-images.middleware';
 import { validateRequest } from '~/middlewares/validate-request.middleware';
 
 /**
@@ -42,10 +44,10 @@ import { validateRequest } from '~/middlewares/validate-request.middleware';
  * duas leituras autenticadas — e limitar castigaria o administrador que percorre
  * as paginas da listagem.
  *
- * As rotas de ESCRITA (`POST /`, `PATCH /:id`, `PATCH /:id/status`,
- * `DELETE /:id`) entram neste mesmo arquivo nas TASK-BACKEND-007 a 009, com o
- * middleware de multipart no meio da cadeia. O arquivo esta preparado para
- * recebe-las; nenhuma e declarada aqui.
+ * A TASK-BACKEND-007 declarou o `POST /`, primeira rota de ESCRITA e primeira do
+ * projeto inteiro a montar o leitor de multipart; `PATCH /:id`,
+ * `PATCH /:id/status` e `DELETE /:id` entram neste mesmo arquivo nas
+ * TASK-BACKEND-008 e 009.
  */
 
 const controller = createAnimalsController();
@@ -88,4 +90,47 @@ animalsRoutes.get(
   authorizeRole('admin'),
   validateRequest({ params: animalIdParamsSchema }),
   controller.get,
+);
+
+/**
+ * `POST /api/animals` — cadastro com ate cinco imagens (RN-30, RN-39, RN-46).
+ *
+ * A ORDEM DOS CINCO MIDDLEWARES E OBRIGATORIA, e cada posicao resolve um defeito
+ * concreto:
+ *
+ * 1. `authenticate` — identifica quem esta chamando.
+ * 2. `authorizeRole('admin')` — DEPOIS dele, porque le `req.authUser`; montado
+ *    antes, encontraria a identidade ausente e lancaria 401 para todo mundo,
+ *    inclusive o admin.
+ * 3. `uploadAnimalImages` — DEPOIS da autorizacao, e este e o ponto do CA-40: um
+ *    `cliente` recebe `403` sem que o servidor leia os 25 MB do corpo. Montado
+ *    antes, a aplicacao pagaria a leitura inteira de um envio que ela ja sabia
+ *    que ia recusar, e um usuario sem permissao teria como consumir banda e
+ *    memoria do processo a vontade.
+ * 4. `validateRequest` — DEPOIS do multipart, e esta e a inversao que quebraria
+ *    todo cadastro valido: e o leitor de multipart que POPULA `req.body` com os
+ *    campos de texto do formulario. Validado antes, o schema leria um corpo vazio
+ *    e responderia "Este campo é obrigatório." para os cinco campos obrigatorios
+ *    de uma requisicao perfeita.
+ * 5. `controller.create`.
+ *
+ * `authorizeRole('admin')` em MINUSCULAS, como nas duas rotas de leitura acima:
+ * `'ADMIN'` e o literal do enum `UserRole` do BANCO, e o tipo `AuthRole` do
+ * contrato de API nao o admite — `'ADMIN'` NAO COMPILA.
+ *
+ * `validateRequest` recebe SO `body`: a rota nao tem parametro de caminho, e
+ * declarar um schema de query faria um cadastro com `?origem=tela` receber `400`.
+ *
+ * SEM LIMITADOR DE TAXA (Decisao 14 do changelog): os limitadores do projeto
+ * protegem endpoints de credencial, e o consumo desta rota ja esta contido pelos
+ * limites de quantidade, de tamanho por arquivo e de tamanho total do corpo, que
+ * o middleware de multipart aplica antes de qualquer regra de negocio.
+ */
+animalsRoutes.post(
+  '/',
+  authenticate,
+  authorizeRole('admin'),
+  uploadAnimalImages,
+  validateRequest({ body: createAnimalBodySchema }),
+  controller.create,
 );

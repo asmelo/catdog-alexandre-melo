@@ -10,8 +10,9 @@
  * A TASK-BACKEND-003 declarou os textos que a entrada de arquivos produz; a
  * TASK-BACKEND-006 ACRESCENTOU o bloco de leitura abaixo. O arquivo e sempre
  * ESTENDIDO, nunca reescrito: sobrescreve-lo apagaria as mensagens que o
- * `upload-animal-images.middleware.ts` consome. Os textos de escrita entram nas
- * fatias seguintes, no mesmo arquivo — nao antecipados aqui.
+ * `upload-animal-images.middleware.ts` consome. A TASK-BACKEND-007 ACRESCENTOU o
+ * bloco de escrita; os textos de edicao e de exclusao entram nas fatias
+ * seguintes, no mesmo arquivo — nao antecipados aqui.
  */
 export const MESSAGES = {
   // --- Guarda comum de validacao (contrato de API da spec) ---
@@ -72,6 +73,73 @@ export const MESSAGES = {
 
   // --- Armazenamento de objetos (RN-38, RN-39) ---
   IMAGE_STORAGE_UNAVAILABLE: 'Não foi possível salvar as imagens. Tente novamente.',
+
+  // --- Escrita do animal (TASK-BACKEND-007, contrato de `POST /api/animals`) ---
+
+  /**
+   * Campo obrigatorio ausente ou em branco. Acompanha o `VALIDATION_ERROR`
+   * (400), em `details`, no `field` do campo que faltou.
+   *
+   * UMA chave para TODOS os campos obrigatorios (`name`, `speciesId`, `size`,
+   * `sex`, `cityId`), e nao uma por campo: a tabela "Mensagens ao Usuario" da
+   * spec fixa uma unica frase para a condicao "campo obrigatorio em branco", e
+   * e o `field` do `details` — nao o texto — que diz ao administrador QUAL
+   * campo corrigir. Cinco chaves com o mesmo literal so criariam cinco lugares
+   * onde ele pode divergir.
+   */
+  FIELD_REQUIRED: 'Este campo é obrigatório.',
+
+  /**
+   * RN-03 / RN-04 — limites do nome, contados sobre o valor JA normalizado
+   * (aparado e com espacos internos colapsados). Sem essa ordem, `"  Theo  "`
+   * seria medido com 8 caracteres e um nome que apos o colapso ficasse com 1
+   * caractere seria aceito (CT-04, CT-05, CT-06, CT-07).
+   */
+  NAME_TOO_SHORT: 'O nome do animal deve ter no mínimo 2 caracteres.',
+  NAME_TOO_LONG: 'O nome do animal deve ter no máximo 60 caracteres.',
+
+  /** RN-23 — 1000 caracteres contados DEPOIS do `trim` (CT-21). */
+  DESCRIPTION_TOO_LONG: 'A descrição deve ter no máximo 1000 caracteres.',
+
+  /**
+   * RN-19 — as duas bordas da data de nascimento, comparadas no fuso
+   * America/Sao_Paulo e nao no fuso do processo. A data de HOJE e sempre aceita
+   * (CT-15, CT-16, CT-17).
+   */
+  BIRTH_DATE_IN_FUTURE: 'A data de nascimento não pode ser futura.',
+  BIRTH_DATE_TOO_OLD: 'Informe uma data de nascimento dos últimos 30 anos.',
+
+  /**
+   * NAO consta da tabela "Mensagens ao Usuario", pela mesma razao ja registrada
+   * em `INVALID_PAGE`: a spec so previu texto para data futura e para data
+   * antiga demais, porque a interface usa um seletor de data e nunca produz
+   * `"05/11/2022"` nem `"ontem"`. Quem alcanca esta mensagem e quem chama a API
+   * diretamente (RN-33), e sem ela o Zod entregaria o literal ingles
+   * `"Invalid date"` na resposta ao usuario, que a RNF-22 (Idioma) proibe. O
+   * texto nomeia o formato aceito porque e a unica correcao possivel.
+   */
+  INVALID_BIRTH_DATE: 'Informe a data de nascimento no formato AAAA-MM-DD.',
+
+  /**
+   * RN-11, RN-12, RN-24 — valor fora do conjunto fechado de `size`, de `sex` ou
+   * dos dois indicadores de convivencia (CT-12).
+   *
+   * A mesma frase serve aos quatro campos porque a spec a fixa para a condicao
+   * "porte, sexo ou status fora da lista", e porque ela e verdadeira tambem para
+   * uma alternancia que chegue com algo que nao seja `"true"` nem `"false"`.
+   */
+  INVALID_OPTION: 'Selecione uma opção válida.',
+
+  /**
+   * RN-26 — a cidade informada nao existe no cadastro de apoio. Acompanha o
+   * `code` `CITY_NOT_FOUND` (404).
+   *
+   * Vive AQUI e nao em `geography.messages.ts`, ao lado de `STATE_NOT_FOUND`: a
+   * falha e do cadastro de ANIMAL, e um import cruzado faria uma revisao de
+   * texto na geografia mudar em silencio a resposta de `POST /api/animals`. E a
+   * mesma razao ja registrada em `INVALID_IDENTIFIER`.
+   */
+  CITY_NOT_FOUND: 'Cidade não encontrada.',
 
   /**
    * NAO consta da tabela "Mensagens ao Usuario": a spec nao previu texto para um

@@ -4,6 +4,7 @@ import {
   ServiceUnavailableError,
   UnsupportedMediaTypeError,
   ValidationError,
+  VALIDATION_ERROR_CODE,
 } from '~/shared/errors/http-errors';
 
 /**
@@ -87,6 +88,26 @@ export class MultipartBodyRequiredError extends UnsupportedMediaTypeError {
 export class AnimalImageLimitExceededError extends ValidationError {
   constructor() {
     super(MESSAGES.ANIMAL_IMAGE_LIMIT_EXCEEDED, 'ANIMAL_IMAGE_LIMIT_EXCEEDED');
+  }
+}
+
+/**
+ * RN-54 — arquivo de tamanho ZERO.
+ *
+ * Separado de `AnimalImageTypeNotAllowedError` de proposito, e a separacao e a
+ * razao de a classe existir: `detectImageMimeType` devolve `null` tanto para um
+ * buffer vazio quanto para um GIF, e fundir os dois desfechos numa unica
+ * mensagem faria o administrador procurar problema de FORMATO num arquivo que na
+ * verdade nao subiu. Quem distingue e o TAMANHO, verificado antes da assinatura.
+ *
+ * 400 com o `code` generico `VALIDATION_ERROR`, e nao um `code` proprio: e o que
+ * a tabela de falhas de `POST /api/animals` fixa para esta condicao (CT-51). Sem
+ * `details` — a mensagem ja e especifica, e o unico campo possivel e o de
+ * arquivos, que a interface conhece.
+ */
+export class AnimalImageEmptyError extends ValidationError {
+  constructor() {
+    super(MESSAGES.IMAGE_FILE_EMPTY, VALIDATION_ERROR_CODE);
   }
 }
 
