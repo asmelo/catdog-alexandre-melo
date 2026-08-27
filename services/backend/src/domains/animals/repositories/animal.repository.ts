@@ -1,4 +1,11 @@
-import type { AnimalImage, AnimalSex, AnimalSize, Prisma, PrismaClient } from '@prisma/client';
+import type {
+  AnimalImage,
+  AnimalSex,
+  AnimalSize,
+  AnimalStatus,
+  Prisma,
+  PrismaClient,
+} from '@prisma/client';
 
 /**
  * Porta de acesso a `animals`. Como nos repositorios dos dominios auth, species
@@ -11,8 +18,8 @@ import type { AnimalImage, AnimalSex, AnimalSize, Prisma, PrismaClient } from '@
  *
  * A TASK-BACKEND-007 acrescentou a CRIACAO (`create` e `createImages`) e a
  * TASK-BACKEND-008 acrescentou a EDICAO (`updateIfUnchanged`, `deleteImagesByIds`
- * e `updateImagePosition`); alteracao de status e exclusao entram neste mesmo
- * arquivo na TASK-BACKEND-009.
+ * e `updateImagePosition`); a TASK-BACKEND-009 acrescentou a ALTERACAO DE STATUS
+ * (`updateStatusIfUnchanged`) e a EXCLUSAO (`deleteById`).
  */
 
 /**
@@ -253,6 +260,53 @@ export interface AnimalRepository {
     data: UpdateAnimalData,
   ): Promise<number>;
   /**
+   * RN-16 / RN-47 — atualizacao CONDICIONAL do STATUS, e SOMENTE dele.
+   *
+   * Assinatura propria em vez de reusar `updateIfUnchanged` com um
+   * `UpdateAnimalData` de status: aquele metodo regrava as dez colunas do animal,
+   * e quem chamasse teria de MONTAR os nove outros valores a partir de uma
+   * leitura anterior so para regrava-los identicos. Alem de custar a leitura, isso
+   * abriria uma janela real de perda — os valores viriam de um instante ANTERIOR
+   * a gravacao, entao uma alteracao concorrente que tivesse ocorrido depois
+   * daquela leitura seria sobrescrita pela propria alteracao de status. Com
+   * `data: { status }` o `UPDATE` toca UMA coluna e nenhum outro campo pode ser
+   * alterado por este caminho (RN-16, CT-69, CA-30).
+   *
+   * O `updatedAt` novo NAO e parametro, exatamente como em `updateIfUnchanged`: o
+   * `@updatedAt` do schema o regrava sozinho neste `updateMany` — e por isso a
+   * alteracao de status gira o MESMO token que a edicao consome, e as duas
+   * operacoes disputam a mesma trava otimista em vez de terem cada uma a sua.
+   *
+   * `count === 0` continua NAO distinguindo "nao existe" de "mudou": o
+   * repositorio nao lanca erro HTTP. Quem separa `404` de `409` e o service, com
+   * a mesma releitura da edicao.
+   */
+  updateStatusIfUnchanged(
+    id: string,
+    expectedUpdatedAt: Date,
+    status: AnimalStatus,
+  ): Promise<number>;
+  /**
+   * RN-37 / RN-45 — apaga a linha do animal e devolve quantas apagou (`0` ou `1`).
+   *
+   * As linhas de `animal_images` vao junto pela CASCATA declarada no schema
+   * (RN-55): nao ha `DELETE` de imagem a emitir aqui, e emiti-lo duplicaria em
+   * codigo uma garantia que ja esta no banco. Os OBJETOS no armazenamento nao sao
+   * tocados por este metodo e nao teriam como ser — a porta de persistencia nao
+   * conhece o armazenamento; quem os remove e o service, depois desta chamada
+   * (RN-40).
+   *
+   * A ESPECIE e a CIDADE nao sao afetadas em hipotese alguma (RN-10): os dois
+   * vinculos sao RESTRITIVOS e apontam do animal PARA elas, entao apagar o animal
+   * apenas remove a referencia (CT-80, CA-35).
+   *
+   * A contagem e o resultado que importa, pelo mesmo motivo de
+   * `updateIfUnchanged`: uma exclusao concorrente entre a leitura e este comando
+   * devolve `0`, e e assim que o segundo administrador recebe `404` em vez de um
+   * `204` para uma exclusao que ele nao fez.
+   */
+  deleteById(id: string): Promise<number>;
+  /**
    * RN-36 — apaga as linhas de `animal_images` cujos identificadores foram
    * removidos do formulario, e devolve quantas apagou.
    *
@@ -476,6 +530,53 @@ export class PrismaAnimalRepository implements AnimalRepository {
         needsLargeSpace: data.needsLargeSpace,
       },
     });
+
+    return resultado.count;
+  }
+
+  /**
+   * `data: { status }` e SO isso: nenhuma outra coluna aparece, entao nao existe
+   * caminho por onde este metodo pudesse alterar outro campo do animal, nem que
+   * a forma de `UpdateAnimalData` cresca (RN-16).
+   *
+   * `updateMany` e nao `update`, pela MESMA razao de `updateIfUnchanged`: o
+   * `update` exige filtro unico, e `updatedAt` no `where` nao e unico; alem disso
+   * ele lanca `P2025` quando nada casa, transformando o conflito de concorrencia
+   * previsto — que o contrato responde com `409` — em excecao do ORM a inspecionar
+   * por codigo de erro.
+   *
+   * Enviar o status que o animal JA POSSUI e uma chamada valida e devolve `1`: o
+   * `where` casa a linha, o Postgres conta a linha como atualizada mesmo quando o
+   * valor gravado e identico, e o `@updatedAt` gira. E o que faz a RN-15 valer sem
+   * ramo especial — reenviar o status atual responde `200` — enquanto mantem a
+   * trava otimista intacta: com um token vencido, o `where` nao casa e a resposta
+   * e `409` mesmo que o status enviado seja o que ja esta la.
+   */
+  async updateStatusIfUnchanged(
+    id: string,
+    expectedUpdatedAt: Date,
+    status: AnimalStatus,
+  ): Promise<number> {
+    const resultado = await this.db.animal.updateMany({
+      where: { id, updatedAt: expectedUpdatedAt },
+      data: { status },
+    });
+
+    return resultado.count;
+  }
+
+  /**
+   * `deleteMany` e nao `delete`, pela mesma razao que levou `updateIfUnchanged` a
+   * `updateMany`: o `delete` lanca `P2025` quando a linha nao existe, e "o animal
+   * ja tinha sido excluido" e um desfecho PREVISTO do contrato (`404`, RN-44,
+   * CT-78) — nao uma falha de infraestrutura a reconhecer por codigo de erro do
+   * ORM. O `deleteMany` devolve `{ count }`, que e exatamente o que o service
+   * precisa, e mantem de pe a regra de que o repositorio nunca lanca erro HTTP.
+   *
+   * SEM `where` de imagem: a cascata de `animal_images` e do BANCO (RN-55).
+   */
+  async deleteById(id: string): Promise<number> {
+    const resultado = await this.db.animal.deleteMany({ where: { id } });
 
     return resultado.count;
   }

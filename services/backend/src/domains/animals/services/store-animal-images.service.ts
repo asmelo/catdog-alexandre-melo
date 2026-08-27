@@ -79,10 +79,14 @@ interface ImagemPreparada {
 
 /**
  * Por que os objetos estao sendo removidos — ver `FALHA_DE_REMOCAO`. Conjunto
- * FECHADO: um chamador novo tem de escolher uma das duas causas, e nao pode
- * inventar uma frase de log propria fora deste arquivo.
+ * FECHADO: um chamador novo tem de escolher uma das causas, e nao pode inventar
+ * uma frase de log propria fora deste arquivo.
+ *
+ * `animalExcluido` entrou na TASK-BACKEND-009. Acrescentar o literal ao tipo e o
+ * caminho previsto para uma causa nova, e o `Record` abaixo torna esquecer a
+ * frase correspondente um erro de compilacao.
  */
-export type CausaDaRemocao = 'envioDesfeito' | 'imagensSubstituidas';
+export type CausaDaRemocao = 'envioDesfeito' | 'imagensSubstituidas' | 'animalExcluido';
 
 const ARQUIVO_VAZIO_BYTES = 0;
 
@@ -272,7 +276,12 @@ export class StoreAnimalImagesService {
    *   passou a referenciar;
    * - `imagensSubstituidas` — a gravacao ACONTECEU, e o que ficou para tras sao os
    *   objetos das imagens que a edicao trocou (RN-36, RN-40). Quem le o log nao
-   *   deve sair a procura de um envio desfeito que nao existe.
+   *   deve sair a procura de um envio desfeito que nao existe;
+   * - `animalExcluido` — o ANIMAL INTEIRO deixou de existir, e com ele as linhas
+   *   de `animal_images`, apagadas pela cascata do banco (RN-55). Quem le o log
+   *   nao tem registro nenhum a consultar para descobrir a que animal aqueles
+   *   objetos pertenciam: a lista de caminhos e a unica pista que sobra, e e por
+   *   isso que ela e registrada (RN-37, RN-40, CT-79).
    *
    * Frases inteiras e nao pedacos concatenados: cada uma continua sendo um literal
    * unico, localizavel por busca direta no codigo a partir da linha do log.
@@ -282,6 +291,8 @@ export class StoreAnimalImagesService {
       '[animal-images] falha ao remover objetos apos envio desfeito; limpeza pendente',
     imagensSubstituidas:
       '[animal-images] falha ao remover objetos de imagens substituidas; limpeza pendente',
+    animalExcluido:
+      '[animal-images] falha ao remover objetos de animal excluido; limpeza pendente',
   };
 
   /**
@@ -291,7 +302,11 @@ export class StoreAnimalImagesService {
    * do banco falhar com as imagens ja no balde, o banco se desfaz sozinho e o
    * armazenamento nao. Ver `create-animal.service.ts`. A edicao o chama duas
    * vezes, com causas diferentes: para desfazer o envio quando a transacao cai, e
-   * depois do commit para apagar os objetos das imagens substituidas.
+   * depois do commit para apagar os objetos das imagens substituidas. A EXCLUSAO
+   * o chama uma vez, DEPOIS de a linha do animal ja ter sido apagada
+   * (`delete-animal.service.ts`), e e dela que a tolerancia a falha descrita
+   * abaixo passa a ser o comportamento OBSERVAVEL do contrato: o `204` e devolvido
+   * mesmo quando a remocao dos objetos falha (RN-37, RN-40, CT-79).
    *
    * `causa` e OBRIGATORIA justamente para que nenhum chamador novo herde por
    * omissao a frase do caminho errado.

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { createAnimalsController } from '~/domains/animals/animals.controller';
 import {
   animalIdParamsSchema,
+  changeStatusBodySchema,
   createAnimalBodySchema,
   listAnimalsQuerySchema,
   updateAnimalBodySchema,
@@ -47,8 +48,9 @@ import { validateRequest } from '~/middlewares/validate-request.middleware';
  *
  * A TASK-BACKEND-007 declarou o `POST /`, primeira rota de ESCRITA e primeira do
  * projeto inteiro a montar o leitor de multipart; a TASK-BACKEND-008 declarou o
- * `PATCH /:id`. `PATCH /:id/status` e `DELETE /:id` entram neste mesmo arquivo na
- * TASK-BACKEND-009.
+ * `PATCH /:id`; a TASK-BACKEND-009 declarou o `PATCH /:id/status` e o
+ * `DELETE /:id`, as duas UNICAS rotas de escrita da feature que NAO montam o
+ * leitor de multipart.
  */
 
 const controller = createAnimalsController();
@@ -137,6 +139,54 @@ animalsRoutes.post(
 );
 
 /**
+ * `PATCH /api/animals/:id/status` — alteracao do status do animal (RN-15, RN-16,
+ * RN-46, RN-47).
+ *
+ * DECLARADA ANTES do `PATCH /:id` porque o caminho e mais especifico. A ordem NAO
+ * e load-bearing neste roteador — verificado: `/:id` casa UM segmento e nao
+ * alcanca `/abc/status`, entao invertida a declaracao o resultado e o mesmo —, mas
+ * ela e a ordem correta a manter: bastaria alguem trocar `/:id` por `/:id*` ou por
+ * uma expressao regular mais larga para que a rota generica passasse a engolir a
+ * especifica, e o defeito apareceria como "alterar status esta editando o animal".
+ *
+ * QUATRO MIDDLEWARES, E NAO CINCO: `uploadAnimalImages` NAO E MONTADO AQUI, e
+ * esta e a diferenca em relacao ao `POST /` e ao `PATCH /:id`. O corpo desta rota
+ * e `application/json` (contrato da spec), e este e o unico endpoint de ESCRITA da
+ * feature que continua sob o `express.json({ limit: '10kb' })` ja montado no
+ * `app.ts`. Montar o leitor de multipart aqui faria toda alteracao de status
+ * legitima ser recusada com `415` antes de o schema ver o corpo — o middleware
+ * recusa `Content-Type` que nao seja `multipart/form-data`.
+ *
+ * A ordem dos quatro e a mesma das demais rotas, e pelas mesmas razoes:
+ *
+ * 1. `authenticate` — identifica quem esta chamando.
+ * 2. `authorizeRole('admin')` — DEPOIS dele, porque le `req.authUser`; montado
+ *    antes, lancaria 401 para todo mundo, inclusive o admin (CA-40).
+ * 3. `validateRequest` — por ultimo antes do handler: quem nao pode operar o
+ *    recurso nao paga o parsing do schema.
+ * 4. `controller.changeStatus`.
+ *
+ * `authorizeRole('admin')` em MINUSCULAS. O texto da TASK-BACKEND-009 pedia
+ * `'ADMIN'` ate a emenda 2 da rodada de revisao 1: `'ADMIN'` e o literal do enum
+ * `UserRole` do BANCO e NAO COMPILA aqui, porque o tipo `AuthRole` do contrato de
+ * API nao o admite (verificado: TS2345). Mesma observacao ja registrada nas rotas
+ * acima.
+ *
+ * `validateRequest` recebe `params` E `body`: o `id` do caminho precisa ser
+ * conferido como UUID para que `"abc"` responda `400` apontando `field: "id"`
+ * (CT-92) em vez de virar um `WHERE` sobre coluna `uuid` que o Postgres recusa.
+ *
+ * SEM LIMITADOR DE TAXA, como nas demais (Decisao 14 do changelog).
+ */
+animalsRoutes.patch(
+  '/:id/status',
+  authenticate,
+  authorizeRole('admin'),
+  validateRequest({ params: animalIdParamsSchema, body: changeStatusBodySchema }),
+  controller.changeStatus,
+);
+
+/**
  * `PATCH /api/animals/:id` — edicao com bloqueio otimista e reconciliacao de
  * imagens (RN-35, RN-36, RN-46, RN-47, RN-50).
  *
@@ -176,4 +226,37 @@ animalsRoutes.patch(
   uploadAnimalImages,
   validateRequest({ params: animalIdParamsSchema, body: updateAnimalBodySchema }),
   controller.update,
+);
+
+/**
+ * `DELETE /api/animals/:id` — exclusao definitiva do animal (RN-37, RN-44,
+ * RN-45, RN-55).
+ *
+ * TRES MIDDLEWARES, o menor conjunto de todas as rotas de escrita da feature.
+ * `uploadAnimalImages` nao entra pelo motivo mais simples possivel — a rota nao
+ * aceita corpo — e `express.json` sequer chega a parsear nada.
+ *
+ * `validateRequest` recebe SO `params`: declarar um schema de corpo faria um
+ * cliente que enviasse `{}` receber `400` em vez de ter o corpo ignorado. Mesma
+ * decisao ja registrada em `speciesRoutes.delete('/:id')`. O
+ * `animalIdParamsSchema` e o MESMO das rotas acima, e nao uma segunda declaracao:
+ * e ele que faz um identificador malformado sair como `400` apontando
+ * `field: "id"` (CT-92) em vez de chegar ao repositorio.
+ *
+ * SEM token de bloqueio otimista, ao contrario das duas rotas de `PATCH`: o
+ * contrato do `DELETE` nao tem corpo, e a decisao "este animal nao deve mais
+ * existir" nao fica errada porque outro campo mudou nesse meio-tempo. Ver
+ * `delete-animal.service.ts`.
+ *
+ * `authorizeRole('admin')` em MINUSCULAS — o texto da task pedia `'ADMIN'` ate a
+ * emenda 2 da rodada de revisao 1, e `'ADMIN'` NAO COMPILA (verificado: TS2345).
+ *
+ * SEM LIMITADOR DE TAXA (Decisao 14 do changelog).
+ */
+animalsRoutes.delete(
+  '/:id',
+  authenticate,
+  authorizeRole('admin'),
+  validateRequest({ params: animalIdParamsSchema }),
+  controller.remove,
 );

@@ -61,7 +61,8 @@ transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; 
 | 005 backend endpoints de estados e cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `4e799d3` |
 | 006 backend leitura de animais, paginação e idade | **concluída** — reprovada na rodada 1 (1 major), aprovada na rodada 2 | typecheck exit 0; 24 suítes / 314 testes | `febeb92` |
 | 007 backend criação de animal com upload | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `eba537f` |
-| 008 backend edição com trava otimista | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
+| 008 backend edição com trava otimista | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | `b0a7581` |
+| 009 backend status e exclusão | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 24 suítes / 314 testes | ver `git log` |
 
 **F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
 `AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
@@ -393,6 +394,26 @@ de calendário que o schema de data de nascimento já usava.
 **restrição endereçada por nome à TASK-009**: a dispensa de um método de leitura de imagens se apoia no invariante
 de que toda mutação de `animal_images` passa pela linha de `animals` e gira o token. A revisão auditou e confirmou
 que vale hoje; qualquer operação futura que altere imagem sem tocar `animals` invalida a reconciliação.
+
+**F2/TASK-BACKEND-009** — `PATCH /api/animals/:id/status` e `DELETE /api/animals/:id`. As 27 chaves de mensagem
+bastaram; nenhuma nova foi necessária.
+
+**O invariante da TASK-008 sobreviveu** — a revisão varreu as seis mutações Prisma do repositório e confirmou que as
+três de `animal_images` estão **fora do diff** desta task. A mudança de status é `data: { status }` numa coluna e
+gira o token; a exclusão remove a própria linha de `animals`. A reconciliação da 008 continua válida.
+
+**Órfãos no armazenamento:** o `Cascade` apaga as **linhas** de `animal_images`, nunca os **objetos**. Os
+`storagePath` são coletados **antes** do `DELETE` — depois da cascata não há mais registro de quais objetos eram do
+animal, e a coleta tardia devolveria lista vazia, deixando até cinco órfãos por exclusão **sem alterar nenhuma
+resposta**. Falha do balde não derruba a exclusão: sai log com os caminhos (RN-40 / CT-79).
+
+**As cinco alegações de que a task não funciona procederam todas.** Uma delas com nuance útil: a ordem
+`PATCH /:id/status` antes de `PATCH /:id` **não é load-bearing** — medido no Express 4.22.2 com a ordem invertida,
+`/:id` casa um segmento e não alcança `/abc/status`. A instrução foi cumprida assim mesmo, por ser defensiva.
+
+**Limpeza que rendeu mais que o esperado:** a dupla asserção `as unknown as` em dois pontos dos validadores era
+**pura sobra** — o Zod já tem sobrecarga para tupla imutável. Removê-la devolveu a checagem que garante que a lista
+de status case com o tipo público, e que a asserção estava apagando.
 
 ## ⚠️ AÇÃO DO DONO DO PROJETO — o backend não sobe sem credencial de armazenamento
 

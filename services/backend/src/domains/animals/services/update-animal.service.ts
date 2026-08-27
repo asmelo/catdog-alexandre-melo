@@ -376,8 +376,19 @@ function comoLinhaDeAnimal(entrada: UpdateAnimalInput): UpdateAnimalData {
  *
  * Devolve o erro em vez de lanca-lo para que o ponto de uso continue sendo um
  * `throw` visivel — quem le `persistir` ve onde a transacao termina.
+ *
+ * EXPORTADO desde a TASK-BACKEND-009: a alteracao de status tem a MESMA
+ * atualizacao condicional e portanto a mesma ambiguidade a desfazer, e
+ * `change-animal-status.service.ts` importa esta funcao em vez de reescreve-la.
+ * Mesmo precedente de `PORTE_PERSISTIDO`/`SEXO_PERSISTIDO`, que a edicao importa
+ * do cadastro: duas copias divergiriam, e a divergencia apareceria como um `409`
+ * mandando o administrador recarregar um animal que ja nao existe.
+ *
+ * A funcao recebe o REPOSITORIO por parametro e nao le nada de fora: e por isso
+ * que ela serve tanto ao caminho da edicao, que a chama com a porta ligada a
+ * transacao, quanto ao da alteracao de status, que a chama com a porta comum.
  */
-async function conflitoOuAusencia(
+export async function conflitoOuAusencia(
   repositorio: AnimalRepository,
   id: string,
 ): Promise<AnimalNotFoundError | AnimalStaleUpdateError> {

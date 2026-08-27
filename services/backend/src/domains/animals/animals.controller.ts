@@ -2,13 +2,16 @@ import type { Request, RequestHandler } from 'express';
 
 import type {
   AnimalIdParams,
+  ChangeStatusBody,
   CreateAnimalBody,
   ListAnimalsQuery,
   UpdateAnimalBody,
 } from '~/domains/animals/animals.validators';
 import type { AnimalResponse } from '~/domains/animals/mappers/animal.mapper';
 import { PrismaAnimalRepository } from '~/domains/animals/repositories/animal.repository';
+import { ChangeAnimalStatusService } from '~/domains/animals/services/change-animal-status.service';
 import { CreateAnimalService } from '~/domains/animals/services/create-animal.service';
+import { DeleteAnimalService } from '~/domains/animals/services/delete-animal.service';
 import { GetAnimalService } from '~/domains/animals/services/get-animal.service';
 import {
   ListAnimalsService,
@@ -38,9 +41,8 @@ import { HTTP_STATUS } from '~/shared/http/http-status';
  * corpo de resposta de erro. E por isso que o `404 ANIMAL_NOT_FOUND` do
  * `GetAnimalService` nao aparece em lugar nenhum deste arquivo.
  *
- * A TASK-BACKEND-007 acrescentou o handler de CRIACAO e a TASK-BACKEND-008 o de
- * EDICAO; os de alteracao de status e de exclusao entram neste mesmo arquivo na
- * TASK-BACKEND-009.
+ * A TASK-BACKEND-007 acrescentou o handler de CRIACAO, a TASK-BACKEND-008 o de
+ * EDICAO e a TASK-BACKEND-009 os de ALTERACAO DE STATUS e de EXCLUSAO.
  */
 
 /** `GET /` e `POST /` nao tem parametro de caminho. */
@@ -80,6 +82,25 @@ type ManipuladorDeCriacao = RequestHandler<SemParametros, AnimalResponse, Create
  * `validateRequest`, e nao ha `new Date(...)` nem `JSON.parse(...)` aqui.
  */
 type ManipuladorDeEdicao = RequestHandler<AnimalIdParams, AnimalResponse, UpdateAnimalBody>;
+
+/**
+ * A alteracao de status le o `id` do CAMINHO e os DOIS unicos campos do corpo.
+ *
+ * O corpo chega de `application/json` — e nao de `multipart/form-data`, como as
+ * duas escritas acima —, entao `req.body` foi montado pelo
+ * `express.json({ limit: '10kb' })` do `app.ts` e parseado por
+ * `changeStatusBodySchema` dentro do `validateRequest`. `updatedAt` ja e uma
+ * `Date`; nao ha `new Date(...)` aqui.
+ */
+type ManipuladorDeStatus = RequestHandler<AnimalIdParams, AnimalResponse, ChangeStatusBody>;
+
+/**
+ * `DELETE /:id`: o identificador vem do caminho e o sucesso e `204` SEM CORPO,
+ * dai o `void` no lugar do tipo de resposta — mesma forma de
+ * `species.controller.ts`. O corpo da requisicao e `unknown` e nao um schema: a
+ * rota nao aceita corpo.
+ */
+type ManipuladorDeExclusao = RequestHandler<AnimalIdParams, void, unknown>;
 
 /**
  * Traduz os arquivos que o `uploadAnimalImages` deixou em `req.files` para a
@@ -141,6 +162,8 @@ export interface AnimalsControllerDependencies {
   readonly getAnimal: GetAnimalService;
   readonly createAnimal: CreateAnimalService;
   readonly updateAnimal: UpdateAnimalService;
+  readonly changeAnimalStatus: ChangeAnimalStatusService;
+  readonly deleteAnimal: DeleteAnimalService;
 }
 
 export class AnimalsController {
@@ -245,6 +268,47 @@ export class AnimalsController {
 
     resposta.status(HTTP_STATUS.OK).json(animal);
   };
+
+  /**
+   * `200` com a representacao do animal, inclusive o `updatedAt` NOVO — que e o
+   * token que a listagem precisa para a proxima alteracao daquela linha (RN-47).
+   *
+   * UM service e nada mais, e aqui isso e a propria RN-16: o handler repassa
+   * EXATAMENTE `status` e `expectedUpdatedAt`, e nao ha nenhum outro campo do
+   * animal a repassar porque nenhum outro existe no corpo. `changeStatusBodySchema`
+   * recusou qualquer chave a mais antes de chegar aqui (CT-69, CT-75, CA-30).
+   *
+   * A decisao entre `200`, `404 ANIMAL_NOT_FOUND` e `409 ANIMAL_STALE_UPDATE` e
+   * inteira do `ChangeAnimalStatusService` — o controller nao consulta o banco,
+   * nao compara marca de alteracao e nao monta corpo de erro.
+   */
+  readonly changeStatus: ManipuladorDeStatus = async (requisicao, resposta) => {
+    const corpo = requisicao.body;
+
+    const animal = await this.services.changeAnimalStatus.execute({
+      id: requisicao.params.id,
+      expectedUpdatedAt: corpo.updatedAt,
+      status: corpo.status,
+    });
+
+    resposta.status(HTTP_STATUS.OK).json(animal);
+  };
+
+  /**
+   * `204` SEM CORPO (CT-76, CA-34). `.send()` sem argumento e nao `.json(...)`: o
+   * `204` nao carrega representacao, e devolver o animal recem-excluido convidaria
+   * a interface a exibir um recurso que ja nao existe.
+   *
+   * UM service e nada mais. A coleta dos caminhos das imagens antes da exclusao, a
+   * cascata das linhas, a remocao dos objetos e a tolerancia a falha dela vivem
+   * inteiras no `DeleteAnimalService`; o `404` do animal inexistente sai pelo
+   * `error-handler.middleware.ts`, como todo desfecho de erro do projeto.
+   */
+  readonly remove: ManipuladorDeExclusao = async (requisicao, resposta) => {
+    await this.services.deleteAnimal.execute({ id: requisicao.params.id });
+
+    resposta.status(HTTP_STATUS.NO_CONTENT).send();
+  };
 }
 
 /**
@@ -295,5 +359,19 @@ export function createAnimalsController(
     getAnimal: new GetAnimalService(animals),
     createAnimal: new CreateAnimalService(animals, especies, geografia, imagens, prisma),
     updateAnimal: new UpdateAnimalService(animals, especies, geografia, imagens, prisma),
+
+    /**
+     * A alteracao de status recebe SO o repositorio: ela nao toca imagem, nao
+     * resolve especie nem cidade e nao abre transacao (RN-16). Passar as outras
+     * portas aqui daria a este caso de uso acesso a capacidades que ele nao deve
+     * ter.
+     *
+     * A exclusao recebe o repositorio e o MESMO `StoreAnimalImagesService` que o
+     * cadastro e a edicao compartilham: e nele que mora `compensar`, o ponto unico
+     * onde "remover objetos, engolir a falha e registrar a pendencia" esta escrito
+     * (RN-40).
+     */
+    changeAnimalStatus: new ChangeAnimalStatusService(animals),
+    deleteAnimal: new DeleteAnimalService(animals, imagens),
   });
 }

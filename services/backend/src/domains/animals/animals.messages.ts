@@ -11,8 +11,24 @@
  * TASK-BACKEND-006 ACRESCENTOU o bloco de leitura abaixo. O arquivo e sempre
  * ESTENDIDO, nunca reescrito: sobrescreve-lo apagaria as mensagens que o
  * `upload-animal-images.middleware.ts` consome. A TASK-BACKEND-007 ACRESCENTOU o
- * bloco de escrita; a TASK-BACKEND-008 ACRESCENTOU o bloco de edicao. Os textos
- * de exclusao entram na fatia seguinte, no mesmo arquivo — nao antecipados aqui.
+ * bloco de escrita; a TASK-BACKEND-008 ACRESCENTOU o bloco de edicao.
+ *
+ * A TASK-BACKEND-009 — alteracao de status e exclusao — NAO acrescentou nenhuma
+ * chave, e a ausencia foi conferida contra as duas tabelas de falha da spec, nao
+ * presumida. Os dois endpoints respondem com textos que ja existem acima:
+ * `INVALID_OPTION` para `status` fora dos quatro valores (CT-72),
+ * `FIELD_NOT_ALLOWED` para chave extra no corpo (CT-75), `FIELD_REQUIRED` e
+ * `INVALID_UPDATED_AT` para o token de concorrencia, `ANIMAL_STALE_UPDATE` para o
+ * conflito (CT-67), `ANIMAL_NOT_FOUND` para o animal inexistente (CT-73, CT-78) e
+ * `INVALID_IDENTIFIER` para o `id` malformado (CT-92).
+ *
+ * A EXCLUSAO em particular nao tem texto de sucesso a declarar: ela responde
+ * `204` SEM CORPO. "Animal excluído com sucesso." e da INTERFACE, que a exibe
+ * apos o `204` — declara-la aqui criaria uma mensagem de backend que nenhuma
+ * resposta carrega. Pelo mesmo motivo nao existe texto para o arquivo remanescente
+ * da RN-40: ele e registrado no LOG do servidor, e a frase daquele registro vive
+ * em `store-animal-images.service.ts`, junto da politica de compensacao — este
+ * catalogo e de textos ao USUARIO, e nao de textos ao operador.
  */
 export const MESSAGES = {
   // --- Guarda comum de validacao (contrato de API da spec) ---

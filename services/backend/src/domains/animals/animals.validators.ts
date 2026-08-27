@@ -5,6 +5,7 @@ import { MESSAGES } from '~/domains/animals/animals.messages';
 import type {
   PublicAnimalSex,
   PublicAnimalSize,
+  PublicAnimalStatus,
 } from '~/domains/animals/mappers/animal.mapper';
 import { productCivilDateOf } from '~/utils/age';
 import { now } from '~/utils/clock';
@@ -264,7 +265,7 @@ function ehEntradaAusente(problema: z.ZodIssueOptionalMessage): boolean {
 function conjuntoFechado<Valor extends string>(
   valores: readonly [Valor, ...Valor[]],
 ): z.ZodEnum<[Valor, ...Valor[]]> {
-  return z.enum(valores as unknown as [Valor, ...Valor[]], {
+  return z.enum(valores, {
     errorMap: (problema) => ({
       message: ehEntradaAusente(problema) ? MESSAGES.FIELD_REQUIRED : MESSAGES.INVALID_OPTION,
     }),
@@ -838,8 +839,110 @@ export const updateAnimalBodySchema = objetoSemCamposExtras({
   keepImageIds: imagensMantidasSchema,
 });
 
+/**
+ * ============================================================================
+ * Corpo do `PATCH /api/animals/:id/status` (RN-13, RN-16, RN-46, RN-47)
+ * ============================================================================
+ *
+ * O UNICO endpoint de ESCRITA da feature que continua sob o
+ * `express.json({ limit: '10kb' })` do `app.ts`: o corpo e `application/json` e
+ * nao `multipart/form-data`, porque nao ha arquivo a enviar. E dai vem a
+ * diferenca de gramatica em relacao a tudo o que esta acima neste arquivo — aqui
+ * os valores chegam com o TIPO que o cliente escreveu, entao `null` e `42` sao
+ * `null` e `42`, e nao `"null"` e `"42"`.
+ *
+ * `uploadAnimalImages` NAO e montado nesta rota: o middleware de multipart recusa
+ * `Content-Type: application/json` com `415`, e monta-lo aqui faria toda
+ * alteracao de status legitima ser recusada antes de chegar ao schema.
+ */
+
+/**
+ * RN-13 — os quatro status, no vocabulario PUBLICO (minusculo, sem acento). Os
+ * rotulos acentuados ("Disponível", "Indisponível") sao da interface e os
+ * literais MAIUSCULOS (`DISPONIVEL`) sao do enum do banco; a traducao para eles
+ * acontece na fronteira do service.
+ *
+ * Tipado a partir de `PublicAnimalStatus` do mapper pelo mesmo motivo de `PORTES`
+ * e `SEXOS`: acrescentar um status no mapper sem acrescenta-lo aqui e erro de
+ * compilacao, em vez de um valor que a leitura devolve e a escrita recusa.
+ */
+const STATUS: readonly [PublicAnimalStatus, ...PublicAnimalStatus[]] = [
+  'disponivel',
+  'reservado',
+  'adotado',
+  'indisponivel',
+];
+
+/**
+ * NAO usa `conjuntoFechado`, e a diferenca e a razao de este schema existir
+ * separado.
+ *
+ * `conjuntoFechado` RAMIFICA a mensagem: campo ausente ou em branco sai como
+ * "Este campo é obrigatório." e so o valor estranho sai como "Selecione uma opção
+ * válida.". Aquela ramificacao existe porque os campos do FORMULARIO chegam de um
+ * `multipart/form-data`, onde um `<select>` sem escolha viaja como `""` e e um
+ * campo nao preenchido, e nao um valor invalido.
+ *
+ * Aqui o contrato pede o OPOSTO, e pede nominalmente: `status` ausente, `""`,
+ * `null`, `42` e `"VENDIDO"` produzem TODOS
+ * `details: [{ field: "status", message: "Selecione uma opção válida." }]`,
+ * sem ramificacao (CT-72, CA-32). E coerente com o transporte: nao ha formulario
+ * do outro lado — ha um `<select>` da LISTAGEM que so envia requisicao quando o
+ * administrador ja escolheu um valor, entao qualquer coisa fora dos quatro e uma
+ * chamada direta a API (RN-33), para a qual "selecione uma opção válida" e a
+ * unica correcao possivel.
+ *
+ * `errorMap` e nao `invalid_type_error`, pelo mesmo motivo registrado em
+ * `conjuntoFechado`: `invalid_type_error` so alcanca o problema `invalid_type`, e
+ * um valor FORA da lista produz `invalid_enum_value` — codigo diferente, que
+ * sairia com o default ingles do Zod na resposta ao usuario (RNF-22). Verificado:
+ * `null` e `42` produzem `invalid_type`, `""` e `"VENDIDO"` produzem
+ * `invalid_enum_value`, e os quatro passam pelo mapa.
+ *
+ * `STATUS` entra SEM assercao, aqui e em `conjuntoFechado`. O `z.enum` do Zod
+ * 3.25.76 tem sobrecarga para tupla imutavel — `<U extends string, T extends
+ * Readonly<[U, ...U[]]>>(values: T) => ZodEnum<Writeable<T>>` — entao o
+ * `readonly` da constante e aceito e o tipo resultante e o mesmo
+ * `ZodEnum<[PublicAnimalStatus, ...]>` que a dupla assercao produzia. Nao
+ * reintroduza `as unknown as`: alem de desnecessario, ele apagaria o erro de
+ * compilacao no dia em que a lista deixasse de casar com `PublicAnimalStatus`.
+ */
+const statusSchema = z.enum(STATUS, {
+  errorMap: () => ({ message: MESSAGES.INVALID_OPTION }),
+});
+
+/**
+ * Corpo do `PATCH /api/animals/:id/status`.
+ *
+ * DOIS campos e mais nenhum (RN-16, RN-46): qualquer outra chave — inclusive
+ * `name`, e principalmente `name` — cai na recusa com "Campo não permitido nesta
+ * requisição." (CT-75). E a garantia de que este endpoint altera EXCLUSIVAMENTE
+ * o status: nao ha por onde um campo do animal entrar, entao nao ha o que o
+ * service precise lembrar de ignorar (CT-69, CA-30).
+ *
+ * `objetoSemCamposExtras` e NAO `.strict()`, que o texto da TASK-BACKEND-009
+ * pedia nominalmente ate a emenda 1 da rodada de revisao 1: o
+ * `unrecognized_keys` do Zod sai com `path: []`,
+ * o `validationErrorFromZodError` faz `path.join('.')` e o cliente receberia
+ * `details: [{ field: "", ... }]`, que nao marca campo nenhum — enquanto a tabela
+ * de falhas da spec exige `field: "<chave>"`. Mesma razao ja registrada no
+ * proprio `objetoSemCamposExtras`, em `species.validators.ts` e em
+ * `auth.validators.ts`.
+ *
+ * `updatedAt` e o MESMO `marcaDeAlteracaoSchema` da edicao, e nao uma segunda
+ * declaracao: e o mesmo token de bloqueio otimista, lido do mesmo `GET` e
+ * comparado com a mesma coluna (RN-47). Duas declaracoes divergiriam no dia em
+ * que a forma aceita mudasse, e o defeito apareceria pelo lado que ninguem
+ * testou.
+ */
+export const changeStatusBodySchema = objetoSemCamposExtras({
+  status: statusSchema,
+  updatedAt: marcaDeAlteracaoSchema,
+});
+
 /** Tipos derivados dos schemas: nenhum DTO duplicando a mesma forma. */
 export type ListAnimalsQuery = z.infer<typeof listAnimalsQuerySchema>;
 export type AnimalIdParams = z.infer<typeof animalIdParamsSchema>;
 export type CreateAnimalBody = z.infer<typeof createAnimalBodySchema>;
 export type UpdateAnimalBody = z.infer<typeof updateAnimalBodySchema>;
+export type ChangeStatusBody = z.infer<typeof changeStatusBodySchema>;
