@@ -124,7 +124,132 @@ model Species {
   /// Ao descomentá-la, o lado inverso em `Animal` DEVE ser declarado com
   /// `onDelete: Restrict` — `Cascade` apagaria animais em silêncio e `SetNull`
   /// produziria animal sem espécie; os dois desfechos são proibidos (RN-09).
-  // animals Animal[]
+  animals Animal[]
 
   @@map("species")
+}
+
+/// Faixa de tamanho do animal adulto (RN-11). Conjunto fechado — ver Decisão C.
+enum AnimalSize {
+  PEQUENO
+  MEDIO
+  GRANDE
+}
+
+/// Sexo do animal (RN-12). Sem "nao informado": o campo é obrigatório.
+enum AnimalSex {
+  MACHO
+  FEMEA
+}
+
+/// Situacao do animal no ciclo de adocao (RN-13).
+/// NAO espelha as etapas do Pedido — sao maquinas de estado distintas (RN-17a).
+enum AnimalStatus {
+  DISPONIVEL
+  RESERVADO
+  ADOTADO
+  INDISPONIVEL
+}
+
+/// Unidade federativa. Dado de apoio semeado a partir do recorte oficial do
+/// IBGE (Decisao A). Nao ha tela de manutencao.
+model State {
+  id   String @id @default(uuid()) @db.Uuid
+  uf   String @unique @db.Char(2)
+  name String @db.VarChar(60)
+
+  cities City[]
+
+  @@map("states")
+}
+
+/// Municipio. `ibgeCode` guarda o codigo oficial para que uma futura
+/// atualizacao do recorte case por identidade estavel, e nao por nome.
+model City {
+  id       String @id @default(uuid()) @db.Uuid
+  stateId  String @map("state_id") @db.Uuid
+  name     String @db.VarChar(120)
+  ibgeCode Int    @unique @map("ibge_code")
+
+  state   State    @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  animals Animal[]
+
+  @@index([stateId, name])
+  @@map("cities")
+}
+
+/// Animal do catalogo. FEATURE-002 do MODULE-002 — Catalogo de pets.
+model Animal {
+  id             String @id @default(uuid()) @db.Uuid
+  /// Nome como o administrador digitou, normalizado quanto a espacos (RN-04).
+  name           String @db.VarChar(60)
+  /// Nome em minusculas, usado APENAS para ordenar ignorando caixa (RN-41).
+  /// Deliberadamente NAO e `@unique`: nome de animal se repete (RN-05).
+  /// Mesmo mecanismo da FEATURE-001, com finalidade diferente — la garante
+  /// unicidade, aqui garante ordenacao estavel.
+  nameNormalized String @map("name_normalized") @db.VarChar(60)
+
+  speciesId String @map("species_id") @db.Uuid
+  cityId    String @map("city_id") @db.Uuid
+
+  size   AnimalSize
+  sex    AnimalSex
+  status AnimalStatus @default(DISPONIVEL)
+
+  /// Data pura, sem hora e sem fuso (RN-18, RN-19). A idade NAO e persistida
+  /// (RN-20): idade gravada envelhece em silencio e passa a mentir.
+  birthDate   DateTime? @map("birth_date") @db.Date
+  description String?   @db.VarChar(1000)
+
+  acceptsOtherAnimals Boolean @default(false) @map("accepts_other_animals")
+  needsLargeSpace     Boolean @default(false) @map("needs_large_space")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Tambem e o token de bloqueio otimista da RN-47.
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  /// RESTRITIVO, jamais Cascade ou SetNull (RN-09). Herdado das RN-08/RN-09 da
+  /// FEATURE-001 deste modulo e nao renegociavel: Cascade apagaria animais em
+  /// silencio ao excluir uma especie e SetNull produziria animal sem classificacao.
+  species Species @relation(fields: [speciesId], references: [id], onDelete: Restrict)
+  /// Restritivo pelo mesmo motivo: manutencao no cadastro de apoio nao pode
+  /// produzir animal sem localizacao (RN-29).
+  city    City    @relation(fields: [cityId], references: [id], onDelete: Restrict)
+
+  images AnimalImage[]
+
+  /// Cobre a ordenacao da RN-41 inteira, incluindo os dois criterios de desempate.
+  @@index([nameNormalized, createdAt, id])
+  @@index([speciesId])
+  @@index([cityId])
+  @@index([status])
+  @@map("animals")
+}
+
+/// Imagem do animal. O arquivo vive no armazenamento de objetos; aqui fica o
+/// registro que o localiza e o ordena (Decisao B).
+model AnimalImage {
+  id          String   @id @default(uuid()) @db.Uuid
+  animalId    String   @map("animal_id") @db.Uuid
+  /// Caminho do objeto, SEMPRE gerado pela aplicacao (RN-52). O nome do arquivo
+  /// enviado pelo administrador nunca compoe este valor.
+  storagePath String   @map("storage_path") @db.VarChar(255)
+  /// Posicao na ordem. 0 e a capa (RN-35).
+  position    Int
+  /// Tipo real, apurado por assinatura binaria (RN-34), nao pelo tipo declarado.
+  contentType String   @map("content_type") @db.VarChar(30)
+  sizeBytes   Int      @map("size_bytes")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  /// EM CASCATA, e isto NAO contradiz a RN-09: a proibicao de cascata vale para
+  /// o vinculo animal→especie. A imagem nao tem existencia propria fora do
+  /// animal, e mante-la produziria lixo permanente no balde (RN-55).
+  animal Animal @relation(fields: [animalId], references: [id], onDelete: Cascade)
+
+  /// Indice, e NAO restricao de unicidade sobre (animalId, position): a
+  /// restricao seria verificada a cada comando, e reordenar imagens dentro de
+  /// uma transacao passaria por estados intermediarios com posicao repetida.
+  /// A unicidade da ordem e responsabilidade do servico.
+  @@index([animalId, position])
+  @@map("animal_images")
 }

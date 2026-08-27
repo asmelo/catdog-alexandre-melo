@@ -50,6 +50,25 @@ O código de produção da feature está em **100% de branch** nos dois serviço
 `users`/`refresh_tokens`/`email_confirmation_tokens` preservados (2 / 8 / 1). Achados minor da revisão foram
 transferidos para a TASK-BACKEND-002 (limite de 60 chars após `toLowerCase()`; `U+200B` não coberto por `\s+`).
 
+### FEATURE-002 — Cadastro de animais (em andamento)
+
+| Task | Status | Testes | Commit |
+|---|---|---|---|
+| 001 backend schema animais/estados/cidades | **concluída** — revisão aprovada (0 critical, 0 major) | typecheck exit 0; 20 suítes / 270 testes | ver `git log` |
+
+**F2/TASK-BACKEND-001** — enums `AnimalSize`/`AnimalSex`/`AnimalStatus` e modelos `State`, `City`, `Animal`,
+`AnimalImage`; relação inversa `animals Animal[]` ativada em `Species`. Migration
+`20260827133551_animals_states_cities` aplicada no Supabase de dev.
+
+**As duas FKs críticas foram conferidas no catálogo do Postgres, não no arquivo de migration:**
+`animals.species_id` é `ON DELETE RESTRICT` (`confdeltype = 'r'`) e `animal_images.animal_id` é `ON DELETE CASCADE`
+(`confdeltype = 'c'`). Exercitadas de fato em transação revertida: excluir espécie com animal vinculado falha com
+`23503` sem apagar nem orfanar nada; excluir animal com 2 imagens apaga as 2. **A dívida da TASK-BACKEND-010 tem
+contra o que rodar.**
+
+Armadilha do RN-05 evitada: `animals.name_normalized` **não** é único (dois animais podem ter o mesmo nome), ao
+contrário do de espécies. Nenhum índice único sobre a coluna.
+
 ## Decisões fora da spec
 
 - **TASK-BACKEND-001** — catálogo de mensagens exporta `MESSAGES` (e não `SPECIES_MESSAGES`), espelhando `auth.messages.ts`. A task não nomeia o export.
@@ -228,6 +247,11 @@ escondeu o caso. Resolvido com sequência de **escrita** por espécie (o marcado
 falhou não mudou nada no servidor e não pode barrar o retrato de uma escrita anterior que deu certo).
 
 ## Achados a repassar para tasks futuras
+
+- **F2/TASK-BACKEND-002 — o gancho `prisma.seed` JÁ ESTÁ OCUPADO.** `package.json` registra `prisma.seed` apontando
+  para `prisma/seed.ts`, que faz `upsert` do administrador reescrevendo `passwordHash`, `role`, `status` e
+  `emailConfirmedAt`. **A carga de estados e municípios não pode ser pendurada nele sem pensar.** Foi por isso que a
+  TASK-001 precisou de `--skip-seed` ao gerar a migration: sem a flag, gerar migration reescreve a linha do admin.
 
 - **TASK-FRONTEND-010 — DUAS ARMADILHAS CONCRETAS, as duas achadas na revisão da 009:**
   1. **Toda escrita local tem que passar por `escrever`** em `use-species-collection.ts`. Chamar `setSpecies`
