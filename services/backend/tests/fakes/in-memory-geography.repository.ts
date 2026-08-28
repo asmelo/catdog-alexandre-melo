@@ -1,6 +1,7 @@
 import type { City, Prisma, State } from '@prisma/client';
 
 import type { StateRepository } from '~/domains/geography/repositories/state.repository';
+import { normalizeForSearch } from '~/utils/text-normalizer';
 
 import { comoPromessa, proximoUuid, type Restauravel } from './restauravel';
 
@@ -53,6 +54,8 @@ export function montarCidade(dados: DadosDeCidadeDeTeste): City {
     id: dados.id ?? proximoUuid(),
     stateId: dados.stateId,
     name: dados.name ?? 'Campo Magro',
+    /** Derivado pela funcao de producao, e nao por copia da regra no dublê. */
+    nameSearch: normalizeForSearch(dados.name ?? 'Campo Magro'),
     ibgeCode: dados.ibgeCode ?? proximoCodigoIbge(),
   };
 }

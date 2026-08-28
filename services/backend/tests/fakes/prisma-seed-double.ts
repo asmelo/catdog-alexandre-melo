@@ -24,6 +24,16 @@ export interface LinhaDeCidade {
   readonly id: string;
   readonly stateId: string;
   readonly name: string;
+  /**
+   * DECLARADA, e nao apenas carregada pelo spread de `semearCidade`.
+   *
+   * A carga passou a comparar `nameSearch` para decidir se um municipio esta
+   * divergente (FEATURE-003 / TASK-BACKEND-001). Com a coluna fora do tipo, o
+   * dublê continuaria funcionando por acidente — o `...linha` a copia — e o dia
+   * em que alguem trocasse o spread por uma construcao campo a campo, a
+   * idempotencia da carga passaria a falhar sem que o tipo avisasse.
+   */
+  readonly nameSearch: string;
   readonly ibgeCode: number;
 }
 
@@ -49,6 +59,7 @@ interface CriacaoDeCidades {
   readonly data: ReadonlyArray<{
     readonly stateId: string;
     readonly name: string;
+    readonly nameSearch: string;
     readonly ibgeCode: number;
   }>;
   readonly skipDuplicates?: boolean;
@@ -56,7 +67,11 @@ interface CriacaoDeCidades {
 
 interface AtualizacaoDeCidade {
   readonly where: { readonly ibgeCode: number };
-  readonly data: { readonly name: string; readonly stateId: string };
+  readonly data: {
+    readonly name: string;
+    readonly stateId: string;
+    readonly nameSearch: string;
+  };
 }
 
 let sequencia = 0;
@@ -112,6 +127,7 @@ class DubleDePrismaDaSemeadura {
   semearCidade(linha: {
     readonly stateId: string;
     readonly name: string;
+    readonly nameSearch: string;
     readonly ibgeCode: number;
   }): LinhaDeCidade {
     const cidade = { id: proximoIdentificador('cidade'), ...linha };

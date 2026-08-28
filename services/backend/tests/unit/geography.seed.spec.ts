@@ -32,6 +32,7 @@ jest.mock('~/infra/prisma/prisma-client', () =>
 );
 
 import { prisma } from '~/infra/prisma/prisma-client';
+import { normalizeForSearch } from '~/utils/text-normalizer';
 
 import {
   prisma as duble,
@@ -131,7 +132,11 @@ describe('seedGeography — serialização (o teste que o volume exige)', () => 
     for (const cidade of divergentes) {
       await duble.city.update({
         where: { ibgeCode: cidade.ibgeCode },
-        data: { name: `${cidade.name} (nome antigo)`, stateId: cidade.stateId },
+        data: {
+          name: `${cidade.name} (nome antigo)`,
+          nameSearch: normalizeForSearch(`${cidade.name} (nome antigo)`),
+          stateId: cidade.stateId,
+        },
       });
     }
 
@@ -193,6 +198,7 @@ describe('seedGeography — contadores', () => {
         duble.semearCidade({
           stateId: gravado.id,
           name: cidade.name,
+          nameSearch: normalizeForSearch(cidade.name),
           ibgeCode: cidade.ibgeCode,
         });
       }
@@ -293,7 +299,11 @@ describe('seedGeography — atualização preserva o identificador', () => {
 
     await duble.city.update({
       where: { ibgeCode: antes.ibgeCode },
-      data: { name: 'Nome Antigo', stateId: antes.stateId },
+      data: {
+        name: 'Nome Antigo',
+        nameSearch: normalizeForSearch('Nome Antigo'),
+        stateId: antes.stateId,
+      },
     });
 
     // Act

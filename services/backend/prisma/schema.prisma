@@ -166,10 +166,15 @@ model State {
 /// Municipio. `ibgeCode` guarda o codigo oficial para que uma futura
 /// atualizacao do recorte case por identidade estavel, e nao por nome.
 model City {
-  id       String @id @default(uuid()) @db.Uuid
-  stateId  String @map("state_id") @db.Uuid
-  name     String @db.VarChar(120)
-  ibgeCode Int    @unique @map("ibge_code")
+  id         String @id @default(uuid()) @db.Uuid
+  stateId    String @map("state_id") @db.Uuid
+  name       String @db.VarChar(120)
+  /// Nome sem acento e em minusculas, para a BUSCA LIVRE da vitrine (RN-23).
+  /// Preenchido por `normalizeForSearch` na carga inicial de municipios; nao ha
+  /// tela de manutencao, entao nenhum service o recalcula em runtime.
+  /// NAO e exposta por API nenhuma — nem publica nem administrativa.
+  nameSearch String @map("name_search") @db.VarChar(120)
+  ibgeCode   Int    @unique @map("ibge_code")
 
   state   State    @relation(fields: [stateId], references: [id], onDelete: Restrict)
   animals Animal[]
@@ -187,7 +192,18 @@ model Animal {
   /// Deliberadamente NAO e `@unique`: nome de animal se repete (RN-05).
   /// Mesmo mecanismo da FEATURE-001, com finalidade diferente — la garante
   /// unicidade, aqui garante ordenacao estavel.
+  /// PRESERVA OS ACENTOS de proposito: ver `animal-name.ts`.
   nameNormalized String @map("name_normalized") @db.VarChar(60)
+  /// Nome sem acento e em minusculas, para a BUSCA LIVRE da vitrine (RN-23).
+  ///
+  /// NAO SUBSTITUI `nameNormalized`, e a distincao nao e detalhe: aquela coluna
+  /// serve a ORDENACAO alfabetica administrativa e mantem os acentos, porque o
+  /// `ORDER BY` deste banco e por locale ICU. Esta serve a COMPARACAO de busca e
+  /// os remove, porque quem digita "cao" precisa encontrar "Cão". Fundir as duas
+  /// quebra a listagem administrativa em silencio, sem quebrar teste nenhum dela.
+  ///
+  /// NAO e exposta por API nenhuma — nem publica nem administrativa.
+  nameSearch     String @map("name_search") @db.VarChar(60)
 
   speciesId String @map("species_id") @db.Uuid
   cityId    String @map("city_id") @db.Uuid
@@ -222,7 +238,13 @@ model Animal {
   @@index([nameNormalized, createdAt, id])
   @@index([speciesId])
   @@index([cityId])
+  /// PERMANECE: serve as consultas administrativas por situacao. O indice da
+  /// vitrine abaixo nao o substitui — ele comeca pela mesma coluna, mas existe
+  /// para uma consulta com ordenacao diferente.
   @@index([status])
+  /// Vitrine: filtro por situacao, ordenacao por data de cadastro e desempate por
+  /// id, cobertos em um so passo (RN-09, RN-14, RN-15).
+  @@index([status, createdAt, id])
   @@map("animals")
 }
 

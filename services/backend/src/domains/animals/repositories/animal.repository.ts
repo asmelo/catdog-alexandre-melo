@@ -136,6 +136,11 @@ export interface CreateAnimalData {
   readonly id: string;
   readonly name: string;
   readonly nameNormalized: string;
+  /**
+   * Chave de BUSCA da vitrine: minuscula e SEM acento (RN-23). Distinta de
+   * `nameNormalized`, que preserva os acentos porque serve a ordenacao.
+   */
+  readonly nameSearch: string;
   readonly speciesId: string;
   readonly cityId: string;
   readonly size: AnimalSize;
@@ -164,6 +169,11 @@ export interface CreateAnimalData {
 export interface UpdateAnimalData {
   readonly name: string;
   readonly nameNormalized: string;
+  /**
+   * Chave de BUSCA da vitrine: minuscula e SEM acento (RN-23). Distinta de
+   * `nameNormalized`, que preserva os acentos porque serve a ordenacao.
+   */
+  readonly nameSearch: string;
   readonly speciesId: string;
   readonly cityId: string;
   readonly size: AnimalSize;
@@ -446,6 +456,7 @@ export class PrismaAnimalRepository implements AnimalRepository {
         id: data.id,
         name: data.name,
         nameNormalized: data.nameNormalized,
+        nameSearch: data.nameSearch,
         speciesId: data.speciesId,
         cityId: data.cityId,
         size: data.size,
@@ -520,6 +531,7 @@ export class PrismaAnimalRepository implements AnimalRepository {
       data: {
         name: data.name,
         nameNormalized: data.nameNormalized,
+        nameSearch: data.nameSearch,
         speciesId: data.speciesId,
         cityId: data.cityId,
         size: data.size,

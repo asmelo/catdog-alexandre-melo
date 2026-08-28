@@ -1,6 +1,7 @@
 import type { AnimalImage, PrismaClient } from '@prisma/client';
 
 import { animalNameKey } from '~/domains/animals/animal-name';
+import { normalizeForSearch } from '~/utils/text-normalizer';
 import {
   AnimalNotFoundError,
   AnimalStaleUpdateError,
@@ -347,6 +348,14 @@ function comoLinhaDeAnimal(entrada: UpdateAnimalInput): UpdateAnimalData {
      * faria o animal renomeado continuar ordenado pelo nome antigo.
      */
     nameNormalized: animalNameKey(entrada.name),
+
+    /**
+     * REGRAVADO a cada edicao, pelo mesmo motivo do `nameNormalized` acima: o nome
+     * pode ter mudado, e deixar a chave de busca para tras faria o animal
+     * renomeado continuar sendo encontrado pelo nome antigo — e deixar de ser
+     * encontrado pelo novo (RN-23, CT-132).
+     */
+    nameSearch: normalizeForSearch(entrada.name),
 
     speciesId: entrada.speciesId,
     cityId: entrada.cityId,

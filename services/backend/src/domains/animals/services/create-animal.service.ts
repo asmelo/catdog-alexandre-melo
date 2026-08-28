@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { AnimalSex, AnimalSize, type PrismaClient } from '@prisma/client';
 
 import { animalNameKey } from '~/domains/animals/animal-name';
+import { normalizeForSearch } from '~/utils/text-normalizer';
 import { CityNotFoundError } from '~/domains/animals/errors/animal.errors';
 import { AnimalImageLimitExceededError } from '~/domains/animals/errors/animal-image.errors';
 import {
@@ -242,6 +243,17 @@ export class CreateAnimalService {
            * `@unique`: dois animais podem se chamar "Theo" (RN-05, CT-08).
            */
           nameNormalized: animalNameKey(entrada.name),
+
+          /**
+           * DERIVADO na MESMA gravacao, e nao numa segunda passada (RN-23): e a
+           * chave de BUSCA da vitrine — minuscula e SEM acento, para que quem
+           * digita "cao" encontre "Cão".
+           *
+           * NAO SUBSTITUI `nameNormalized` acima. Aquele preserva os acentos
+           * porque serve a ordenacao alfabetica; este os remove porque serve a
+           * comparacao de busca. As duas colunas coexistem de proposito.
+           */
+          nameSearch: normalizeForSearch(entrada.name),
 
           speciesId: entrada.speciesId,
           cityId: entrada.cityId,

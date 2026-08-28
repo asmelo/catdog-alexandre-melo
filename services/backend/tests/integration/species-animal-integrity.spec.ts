@@ -78,6 +78,7 @@ jest.mock('~/infra/prisma/prisma-client', () =>
 );
 
 import { hashPassword } from '~/utils/password-hasher';
+import { normalizeForSearch } from '~/utils/text-normalizer';
 
 // Depois do `jest.mock`: e o import do `app` que dispara
 // `createSpeciesController()` e monta o grafo sobre o cliente acima.
@@ -265,6 +266,7 @@ beforeAll(async () => {
   const cidade = await prisma.city.create({
     data: {
       name: NOME_DA_CIDADE_DE_TESTE,
+      nameSearch: normalizeForSearch(NOME_DA_CIDADE_DE_TESTE),
       ibgeCode: CODIGO_IBGE_DA_CIDADE_DE_TESTE,
       stateId: estado.id,
     },
@@ -718,6 +720,7 @@ function dadosDeAnimal(speciesId: string, name: string): Prisma.AnimalUncheckedC
     id: randomUUID(),
     name,
     nameNormalized: name.toLowerCase(),
+    nameSearch: normalizeForSearch(name),
     speciesId,
     cityId: cidadeId,
     size: AnimalSize.MEDIO,

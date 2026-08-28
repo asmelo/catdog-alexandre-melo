@@ -5,6 +5,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 
 import { prisma as prismaCompartilhado } from '~/infra/prisma/prisma-client';
+import { normalizeForSearch } from '~/utils/text-normalizer';
 
 /**
  * Carga das 27 unidades federativas e dos municipios brasileiros a partir do
@@ -274,12 +275,19 @@ async function semearMunicipios(
     return estado.cities.map((cidade) => ({
       stateId,
       name: cidade.name,
+      /**
+       * Chave de BUSCA da vitrine (RN-23), gravada junto do nome. Nenhum service
+       * a recalcula em runtime — nao ha tela de manutencao de municipio —, entao
+       * esta carga e o unico ponto que a mantem correta. Reexecuta-la corrige
+       * registros anteriores a migracao que a introduziu.
+       */
+      nameSearch: normalizeForSearch(cidade.name),
       ibgeCode: cidade.ibgeCode,
     }));
   });
 
   const existentes = await prisma.city.findMany({
-    select: { ibgeCode: true, name: true, stateId: true },
+    select: { ibgeCode: true, name: true, stateId: true, nameSearch: true },
   });
 
   const existentePorCodigo = new Map(existentes.map((cidade) => [cidade.ibgeCode, cidade]));
@@ -289,7 +297,20 @@ async function semearMunicipios(
   const divergentes = desejados.filter((cidade) => {
     const atual = existentePorCodigo.get(cidade.ibgeCode);
 
-    return atual !== undefined && (atual.name !== cidade.name || atual.stateId !== cidade.stateId);
+    /**
+     * `nameSearch` entra na comparacao de divergencia junto com os outros dois: e
+     * o que faz a recarga CORRIGIR os municipios cuja coluna de busca ficou
+     * errada — o backfill em SQL da migracao cobre o repertorio PT-BR, mas quem
+     * garante a igualdade caractere a caractere com `normalizeForSearch` e esta
+     * carga. Sem ele na comparacao, a linha seria considerada em dia e nunca
+     * reescrita.
+     */
+    return (
+      atual !== undefined &&
+      (atual.name !== cidade.name ||
+        atual.stateId !== cidade.stateId ||
+        atual.nameSearch !== cidade.nameSearch)
+    );
   });
 
   /** Mesmo motivo do contador de estados: soma-se o `count` real de cada lote. */
@@ -342,7 +363,7 @@ async function semearMunicipios(
   for (const cidade of divergentes) {
     await prisma.city.update({
       where: { ibgeCode: cidade.ibgeCode },
-      data: { name: cidade.name, stateId: cidade.stateId },
+      data: { name: cidade.name, stateId: cidade.stateId, nameSearch: cidade.nameSearch },
     });
   }
 

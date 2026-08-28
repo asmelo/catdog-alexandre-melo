@@ -16,6 +16,7 @@ import type {
   CreateAnimalImageData,
   UpdateAnimalData,
 } from '~/domains/animals/repositories/animal.repository';
+import { normalizeForSearch } from '~/utils/text-normalizer';
 
 import type { ArmazemDeEspecies } from './in-memory-species.repository';
 import type { ArmazemDeGeografia } from './in-memory-geography.repository';
@@ -48,6 +49,7 @@ export interface DadosDeAnimalDeTeste {
   readonly id?: string;
   readonly name?: string;
   readonly nameNormalized?: string;
+  readonly nameSearch?: string;
   readonly speciesId: string;
   readonly cityId: string;
   readonly size?: AnimalSize;
@@ -80,6 +82,12 @@ export function montarAnimal(dados: DadosDeAnimalDeTeste): Animal {
     id: dados.id ?? proximoUuid(),
     name,
     nameNormalized: dados.nameNormalized ?? name.toLowerCase(),
+    /**
+     * Derivado pela FUNCAO DE PRODUCAO, e nao por uma normalizacao escrita a mao
+     * aqui: uma copia da regra no dublê passaria a divergir dela na primeira
+     * revisao, e a busca da vitrine seria testada contra a regra errada.
+     */
+    nameSearch: dados.nameSearch ?? normalizeForSearch(name),
     speciesId: dados.speciesId,
     cityId: dados.cityId,
     size: dados.size ?? AnimalSize.MEDIO,

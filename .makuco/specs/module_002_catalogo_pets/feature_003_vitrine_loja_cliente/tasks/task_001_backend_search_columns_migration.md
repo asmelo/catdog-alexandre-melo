@@ -112,3 +112,54 @@ Nenhum endpoint é criado, alterado ou removido nesta task. `GET /api/animals`, 
 
 - **Requires**: FEATURE-002 do MODULE-002 completa — tabelas `animals`, `animal_images`, `states`, `cities`, enums `AnimalSize`/`AnimalSex`/`AnimalStatus`, services de escrita de animal e carga inicial de municípios. **Esta feature não pode ser iniciada antes dela.**
 - **Blocks**: TASK-BACKEND-002 (a consulta da vitrine lê `name_search` e depende do índice), TASK-BACKEND-003, TASK-BACKEND-005.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+| Critério de aceite | Resultado |
+|---|---|
+| `"  São   PAULO "` → `"sao paulo"`, `"Cão"` → `"cao"`, `"José"` → `"jose"` | **Confirmado**, medido contra a função real |
+| `"   "` → `""` | **Confirmado** — é o sinal de "busca não aplicada" |
+| Animal com nome acentuado: `name_search` sem acento, `name_normalized` **com** | **Confirmado.** As duas colunas coexistem; nenhuma linha de `animal-name.ts` foi tocada |
+| Renomear reescreve `name_search` na mesma gravação | **Confirmado** em `updateIfUnchanged`, no mesmo `data` do `nameNormalized` |
+| Base pré-existente fica sem nulos após a migração | **Confirmado contra o banco real:** 0 animais e 0 cidades com `name_search` nulo |
+| Segunda execução conclui sem erro e sem alterar dado | **Confirmado duas vezes:** `prisma migrate deploy` não reaplica, e o SQL executado diretamente pela segunda vez conclui sem tocar linha (o `UPDATE` é restrito a `IS NULL`) |
+| `nameSearch` fora de toda resposta de API | **Confirmado por varredura:** não aparece em nenhum mapper nem em nenhum service de leitura |
+| Ordenação administrativa idêntica à anterior | **Confirmado.** Continua sobre `nameNormalized`; 579 testes do backend verdes, sem alteração de baseline |
+| `[status]` **e** `[status, createdAt, id]` presentes | **Confirmado no banco:** `animals_status_idx` e `animals_status_created_at_id_idx` coexistem |
+| Nenhuma dependência acrescentada | **Confirmado.** 15 dependências, as mesmas |
+| `prisma migrate deploy` e `npm run typecheck` com 0 erros | **Confirmado** |
+
+### Divergência de nomenclatura prevista pela própria task
+
+A task cita `prisma/seed-locations.ts`; o arquivo entregue pela FEATURE-002 é **`prisma/seeds/geography.seed.ts`**. A própria task antecipa isso ("se a nomenclatura final divergir, alterar **todo** caminho que grave `Animal.name` e a carga de `cities`"), e foi o que se fez.
+
+### Alterações além da tabela de arquivos, todas consequência direta
+
+O `nameSearch` é `NOT NULL`, então todo caminho que insere `animals` ou `cities` precisou passar a fornecê-lo. O compilador apontou cada um:
+
+| Arquivo | Por quê |
+|---|---|
+| `src/domains/animals/repositories/animal.repository.ts` | `CreateAnimalData` e `UpdateAnimalData` ganharam o campo, e `create`/`updateIfUnchanged` passaram a gravá-lo. Sem isso, o valor calculado nos services não chegaria ao banco |
+| `tests/fakes/in-memory-animal.repository.ts` | O dublê deriva o valor chamando `normalizeForSearch`, e **não** por uma normalização escrita à mão: uma cópia da regra divergiria dela na primeira revisão, e a busca seria testada contra a regra errada |
+| `tests/fakes/in-memory-geography.repository.ts` | Idem |
+| `tests/fakes/prisma-seed-double.ts` | Ver abaixo |
+| `tests/unit/geography.seed.spec.ts` | Acompanha o tipo do dublê |
+| `tests/integration/species-animal-integrity.spec.ts` | Dois `INSERT` diretos contra o banco real |
+
+### Um acerto de fragilidade no dublê da semeadura
+
+A carga passou a comparar `nameSearch` para decidir se um município está divergente — sem isso, a recarga consideraria em dia um município cuja coluna de busca ficou errada, e nunca a reescreveria. Isso importa porque o backfill em SQL cobre o repertório PT-BR por `translate`, mas quem garante a igualdade **caractere a caractere** com `normalizeForSearch` é a carga.
+
+Ao acrescentar a comparação, o dublê continuou passando — mas **por acidente**: `semearCidade` faz `{ id, ...linha }`, então copiava `nameSearch` sem que o tipo `LinhaDeCidade` o declarasse. O dia em que alguém trocasse o spread por uma construção campo a campo, a idempotência da carga passaria a falhar sem que o tipo avisasse. A coluna foi declarada nos quatro pontos do dublê (`LinhaDeCidade`, `CriacaoDeCidades`, `AtualizacaoDeCidade` e `semearCidade`).
+
+### Notas de implementação
+
+**Marcas combinantes por faixa de code point, e não por `\p{Diacritic}`.** A propriedade `Diacritic` inclui caracteres que **não** são marcas combinantes — o acento agudo isolado (U+00B4), o circunflexo (U+02C6), o macron (U+00AF) —, e removê-los apagaria caractere de texto em vez de acento decomposto. A faixa U+0300–U+036F é exatamente onde o `normalize('NFD')` deposita os acentos.
+
+**`SEQUENCIA_DE_ESPACOS` exportada** do `text-normalizer.ts`, para que a próxima função que precise do mesmo colapso importe em vez de reescrever a expressão. `animal-name.ts` e `species-name.ts` mantêm as suas cópias — trocá-las é mexer em código aprovado de outra feature, sem ganho nesta.
+
+**O SQL do backfill espelha a ordem da função TypeScript** (`btrim` → colapso de espaços → remoção de acento → `lower`). Os dois lados da comparação de busca vêm daí; qualquer divergência de ordem produziria chaves diferentes para o mesmo nome.
