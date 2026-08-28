@@ -87,3 +87,44 @@ Entrega o componente da área de imagens do formulário, com o rótulo literal, 
 
 - **Requires**: nenhuma task desta feature.
 - **Blocks**: TASK-FRONTEND-017 (o formulário consome os itens para montar `keepImageIds` e os arquivos).
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+Suíte do frontend: **383 testes, 27 suítes, 0 falha**, estável em três execuções seguidas. `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Rótulo literal, "Escolher arquivos" e "Nenhum arquivo escolhido" (CA-19) | **Confirmado**, caractere a caractere |
+| Dois JPEG → duas miniaturas com "x" e a contagem (CT-45) | **Confirmado.** "2 arquivos escolhidos" e os dois botões com nome acessível distinto |
+| 3 itens + 3 novos: nenhum aceito, mensagem diz quantos cabem (CT-48, CA-20) | **Confirmado** nos dois níveis — na função pura e pela tela |
+| 5 itens, remover 3, escolher 3 → cinco (CT-49b) | **Confirmado**, e o CT-49a (remover 2) continua recusando |
+| Remover imagem gravada não faz requisição (CT-59, RN-49) | **Confirmado.** A guarda de rede do `tests/setup.ts` reprovaria qualquer `fetch`; o componente não importa nada de `~/services/api/` |
+| Removido o item 0, o seguinte assume a posição (CT-60, CA-26) | **Confirmado** na função pura e pela tela |
+| `revokeObjectURL` na remoção e no desmonte | **Confirmado com a URL exata**, e não só "foi chamado": o dublê numera as URLs, então o teste afirma **qual** foi revogada |
+| Nenhuma URL nova por renderização | **Confirmado.** Duas renderizações depois, a contagem de `createObjectURL` subiu exatamente 1 — o número de arquivos novos |
+| Teclado alcança o botão de escolha e cada "x" (CT-94) | **Confirmado** com `tab` e `Enter` |
+| Nome acessível identifica ação e imagem (CT-95) | **Confirmado**: "Remover imagem 2 de 3" |
+| 6 MB e tipo não aceito recusados pelo nome, sem barrar os demais | **Confirmado.** 5 MB exatos entram (limite inclusivo, como no servidor), 5 MB + 1 byte não; 0 byte também é recusado |
+| Não importa nada de `src/services/api/` | **Confirmado** por varredura das linhas de `import` |
+
+### Decisões de implementação
+
+**1. `URL.createObjectURL` no `StagedFactory`, injetado.** A criação da URL é a única dependência do componente no ambiente do navegador. Passá-la por parâmetro deixa `appendFiles` testável sem jsdom e — o que importa mais — deixa o teste afirmar **qual** URL foi revogada, em vez de apenas contar chamadas.
+
+**2. Revogação no desmonte por `useRef`, e não por dependência do efeito.** Um `useEffect` com `[items]` revogaria tudo a cada mudança da lista e apagaria as miniaturas em uso; sem dependência nenhuma, o closure veria a lista da primeira renderização e não revogaria as escolhidas depois. A referência mutável, reatribuída a cada render, é o que faz o efeito de limpeza ver o estado do **fim**.
+
+**3. O `<label>` É o botão de escolha, e não um `<button>`.** Dentro de um `<label htmlFor>`, um `<button>` não aciona o input; e um botão que chamasse `input.click()` criaria um **segundo** ponto focável para a mesma ação — o usuário de teclado passaria duas vezes pelo mesmo controle. Para não reintroduzir a duplicação de classes que a TASK-FRONTEND-014 acabou de eliminar, `SECONDARY_BUTTON_CLASSES` passou a ser exportada do `secondary-button.tsx`.
+
+**4. O input de arquivo é zerado depois de consumir a escolha.** Sem isso, escolher o mesmo arquivo duas vezes seguidas não dispara `change` — o valor do input não mudou —, e o administrador que removeu uma foto por engano não conseguiria reescolhê-la.
+
+**5. As recusas são o único estado local.** Elas descrevem um evento ("estes arquivos não entraram"), não o valor do campo, e não teriam sentido subindo para o formulário. Ficam numa região `aria-live="polite"`, porque aparecem como consequência de uma ação feita em outro ponto da tela (o seletor de arquivos do sistema).
+
+**6. Literais de recusa local diferentes dos do backend, de propósito.** "formato não aceito — envie JPEG ou PNG" não é a frase do `animals.messages.ts`. Igualá-las faria parecer que a triagem do cliente substitui a do servidor, que é justamente o que a RN-33 nega: aqui se olha o tipo **declarado**, lá se apura o conteúdo por **assinatura binária**.
+
+### Arquivos de teste escritos aqui, e não na TASK-FRONTEND-018
+
+`src/domains/animals/animal-images.spec.ts` e `src/components/ui/image-upload-field.spec.tsx` constam da tabela da 018. Foram escritos nesta task porque **todos os doze critérios de aceite dela são comportamentais** — não há como aprová-la sem eles, e adiá-los deixaria a aritmética do limite (a parte que a própria spec já teve de corrigir uma vez) sem rede por três tasks. A 018 não os repete; ela segue com os arquivos restantes da sua lista.

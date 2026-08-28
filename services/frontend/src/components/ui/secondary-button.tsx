@@ -23,7 +23,18 @@ type SecondaryButtonProps = {
  * 4.5:1); o anel de foco da 3.97:1 contra o cartao (AA exige 3:1). Os dois
  * valores sao os ja registrados nos tokens — nenhuma cor nova foi introduzida.
  */
-const CLASSES =
+/**
+ * EXPORTADA porque o `ImageUploadField` precisa da mesma aparencia num `<label>`,
+ * e nao num `<button>`: dentro de um `<label htmlFor>`, um `<button>` nao aciona o
+ * input de arquivo, e um botao que chamasse `input.click()` criaria um SEGUNDO
+ * ponto focavel para a mesma acao — o usuario de teclado passaria duas vezes pelo
+ * mesmo controle. Compartilhar a string e o que evita a divergencia visual que a
+ * TASK-FRONTEND-014 acabou de eliminar.
+ *
+ * `w-full` faz parte da base porque os dois usos em formulario ocupam a largura
+ * toda; quem precisa de largura automatica sobrescreve com `w-auto`.
+ */
+export const SECONDARY_BUTTON_CLASSES =
   'w-full rounded-field border-[1.5px] border-brand-purple bg-surface-card py-3 text-[0.82rem] font-extrabold text-brand-purple transition-colors hover:bg-brand-purple-light focus-visible:shadow-focus-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 
 export function SecondaryButton({
@@ -40,7 +51,7 @@ export function SecondaryButton({
       disabled={isLoading || disabled === true}
       // Spread condicional: `aria-busy="false"` em repouso e ruido no DOM.
       {...(isLoading ? { 'aria-busy': true } : {})}
-      className={[CLASSES, className ?? ''].join(' ').trim()}
+      className={[SECONDARY_BUTTON_CLASSES, className ?? ''].join(' ').trim()}
       {...rest}
     >
       {isLoading ? loadingLabel : children}

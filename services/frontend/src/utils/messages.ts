@@ -312,6 +312,53 @@ export const MESSAGES = {
     NO_FILES_CHOSEN: 'Nenhum arquivo escolhido',
 
     /**
+     * Recusa de arquivo NO CLIENTE, antes de qualquer requisição — por isso estas
+     * três estão aqui e não vêm do backend. Os literais são deliberadamente
+     * DIFERENTES dos do `animals.messages.ts`: aquelas frases descrevem a recusa
+     * do servidor sobre o conteúdo apurado por assinatura binária, e estas
+     * descrevem uma triagem local pelo tipo declarado. Igualá-las faria parecer
+     * que a verificação do cliente substitui a do servidor, que é justamente o
+     * que a RN-33 nega.
+     */
+    IMAGE_TYPE_REJECTED: 'formato não aceito — envie JPEG ou PNG',
+    IMAGE_TOO_LARGE_REJECTED: 'maior que 5 MB',
+    IMAGE_EMPTY_REJECTED: 'arquivo vazio',
+
+    /**
+     * Recusa do LOTE por estouro do limite (RN-50, CT-48, CA-20). Informa quantas
+     * o administrador JÁ tem e quantas ainda cabem, porque "no máximo 5" sozinho
+     * não diz o que fazer a seguir.
+     */
+    imageLimitError(atuais: number, restantes: number): string {
+      const cabem =
+        restantes === 0
+          ? 'não cabe mais nenhuma'
+          : `ainda ${restantes === 1 ? 'cabe 1' : `cabem ${String(restantes)}`}`;
+
+      return `Você já tem ${String(atuais)} ${atuais === 1 ? 'imagem' : 'imagens'}; ${cabem}.`;
+    },
+
+    /** Quantidade escolhida, exibida ao lado do botão depois da primeira escolha. */
+    chosenFilesLabel(total: number): string {
+      return total === 1 ? '1 arquivo escolhido' : `${String(total)} arquivos escolhidos`;
+    },
+
+    /**
+     * Nome acessível do "x" da miniatura. Identifica a AÇÃO e QUAL imagem — um
+     * ícone sem texto alternativo, ou um "Remover" repetido cinco vezes, deixa o
+     * usuário de leitor de tela sem saber o que está prestes a apagar (RNF-17,
+     * CT-95).
+     */
+    removeImageLabel(posicao: number, total: number): string {
+      return `Remover imagem ${String(posicao)} de ${String(total)}`;
+    },
+
+    /** Recusa de um arquivo específico, sinalizado PELO NOME. */
+    rejectedFileLabel(nomeDoArquivo: string, motivo: string): string {
+      return `${nomeDoArquivo}: ${motivo}`;
+    },
+
+    /**
      * FUNCAO e nao template solto, pela mesma razao registrada em
      * `SPECIES.deleteConfirmation`: a frase interpola o nome e precisa sair
      * IDENTICA em toda chamada. As aspas sao as CURVAS `“ ”` da tabela de
