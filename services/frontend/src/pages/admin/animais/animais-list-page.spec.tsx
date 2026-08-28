@@ -66,9 +66,15 @@ function RotaAtual(): ReactElement {
   return <span data-testid="rota">{local.pathname}</span>;
 }
 
-function renderizar(): void {
+function renderizar(estadoDaNavegacao?: unknown): void {
   render(
-    <MemoryRouter initialEntries={['/admin/animais']}>
+    <MemoryRouter
+      initialEntries={[
+        estadoDaNavegacao === undefined
+          ? '/admin/animais'
+          : { pathname: '/admin/animais', state: estadoDaNavegacao },
+      ]}
+    >
       <RotaAtual />
       <Routes>
         <Route path="/admin/animais" element={<AnimaisListPage />} />
@@ -291,6 +297,32 @@ describe('paginação', () => {
     // O rodapé continua informando o total geral em qualquer página.
     expect(screen.getByText('Total: 45 animais')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Próxima' })).toBeDisabled();
+  });
+
+  it('"Anterior" volta uma página e fica desabilitado na primeira', async () => {
+    const usuario = userEvent.setup();
+    const vinte = Array.from({ length: 20 }, (_, i) => animal({ id: `id-${String(i)}` }));
+
+    apiDublada.listAnimals.mockImplementation((params) =>
+      Promise.resolve(pagina(vinte, { page: params?.page ?? 1, total: 45 })),
+    );
+
+    renderizar();
+    await aguardarLista();
+
+    expect(screen.getByRole('button', { name: 'Anterior' })).toBeDisabled();
+
+    await usuario.click(screen.getByRole('button', { name: 'Próxima' }));
+    await aguardarLista();
+
+    expect(screen.getByRole('button', { name: 'Anterior' })).toBeEnabled();
+
+    await usuario.click(screen.getByRole('button', { name: 'Anterior' }));
+
+    await waitFor(() => {
+      expect(apiDublada.listAnimals).toHaveBeenLastCalledWith({ page: 1, pageSize: 20 });
+    });
+    expect(screen.getByText('Página 1 de 3')).toBeInTheDocument();
   });
 
   it('a paginação é do SERVIDOR: trocar de página refaz a consulta', async () => {
@@ -542,6 +574,29 @@ describe('exclusão', () => {
     });
   });
 
+  it('falha que NÃO é `ApiError` exibe a mensagem genérica, e não um texto do erro cru', async () => {
+    const usuario = userEvent.setup();
+
+    apiDublada.deleteAnimal.mockRejectedValue(new TypeError('boom'));
+
+    renderizar();
+    await aguardarLista();
+
+    await usuario.click(screen.getByRole('button', { name: 'Excluir Theo' }));
+    await usuario.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: MESSAGES.ANIMALS.DELETE_ACTION,
+      }),
+    );
+
+    // Não há `message` do backend a exibir: é defeito de programação nesta tela.
+    expect(
+      await screen.findByText('Ocorreu um erro inesperado. Tente novamente.'),
+    ).toBeInTheDocument();
+    // E o animal continua na lista, porque nada foi excluído.
+    expect(screen.getByText('Theo')).toBeInTheDocument();
+  });
+
   it('excluir o último item de uma página não-primeira volta uma página', async () => {
     const usuario = userEvent.setup();
     const vinte = Array.from({ length: 20 }, (_, i) => animal({ id: `id-${String(i)}` }));
@@ -602,6 +657,32 @@ describe('navegação', () => {
   });
 });
 
+describe('nome acessível das ações da linha (CT-95, RNF-17)', () => {
+  it('CT-95: os três controles da linha identificam a AÇÃO e o ANIMAL, não só a ação', async () => {
+    // Arrange — duas linhas, que é o cenário em que "Excluir" sozinho falha:
+    // quem navega por lista de controles ouviria dois botões idênticos.
+    apiDublada.listAnimals.mockResolvedValue(
+      pagina([THEO, animal({ id: 'a2', name: 'Luna' })], { total: 2 }),
+    );
+
+    renderizar();
+    await aguardarLista();
+
+    // Assert
+    for (const nome of ['Theo', 'Luna']) {
+      expect(screen.getByRole('button', { name: `Editar ${nome}` })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: `Excluir ${nome}` })).toBeInTheDocument();
+      expect(
+        screen.getByRole('combobox', { name: `Alterar status de ${nome}` }),
+      ).toBeInTheDocument();
+    }
+
+    // O verbo visível vem PRIMEIRO no nome acessível: é o que mantém a regra de
+    // "rótulo no nome" do WCAG 2.5.3, da qual o comando por voz depende.
+    expect(screen.getByRole('button', { name: 'Excluir Theo' })).toHaveTextContent('Excluir');
+  });
+});
+
 describe('teclado (CT-94, CA-42)', () => {
   it('listar, alterar status, editar e excluir são alcançáveis e acionáveis por teclado', async () => {
     const usuario = userEvent.setup();
@@ -622,5 +703,30 @@ describe('teclado (CT-94, CA-42)', () => {
 
     await usuario.keyboard('{Enter}');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});
+
+describe('mensagem trazida pelo formulário', () => {
+  it('exibe a mensagem de sucesso que o formulário deixou no estado da navegação', async () => {
+    renderizar({ message: 'Animal cadastrado com sucesso.' });
+    await aguardarLista();
+
+    expect(screen.getByRole('status')).toHaveTextContent('Animal cadastrado com sucesso.');
+  });
+
+  it.each([
+    { cenario: 'sem estado nenhum', estado: undefined },
+    { cenario: 'estado que não é objeto', estado: 'mensagem solta' },
+    { cenario: 'objeto sem a chave', estado: { outra: 'coisa' } },
+    { cenario: 'mensagem que não é texto', estado: { message: 42 } },
+    { cenario: 'mensagem vazia', estado: { message: '' } },
+  ])('IGNORA o estado hostil: $cenario', async ({ estado }: { readonly estado: unknown }) => {
+    // `location.state` é controlado pelo HISTÓRICO do navegador: qualquer página
+    // pode empurrar qualquer coisa ali. Uma conversão com `as` faria a tela
+    // renderizar o que viesse.
+    renderizar(estado);
+    await aguardarLista();
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

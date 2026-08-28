@@ -82,3 +82,56 @@ Fecha o critério de qualidade no cliente: 80% de cobertura nos arquivos da feat
 
 - **Requires**: TASK-FRONTEND-012 a TASK-FRONTEND-017 (tudo o que é testado).
 - **Blocks**: nenhuma task. Fecha o critério de qualidade do frontend.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+| Critério de aceite | Resultado |
+|---|---|
+| `npm test` verde e 80% nos arquivos da feature | **503 testes, 33 suítes, 0 falha.** Cobertura global 98,58% stmts / 95,17% branches / 99,09% funcs / 98,56% lines. **Nenhum** arquivo desta feature abaixo de 80% em nenhuma das quatro métricas |
+| Nenhuma requisição real; a guarda de `fetch` permanece ativa | **Confirmado por varredura:** nenhum teste redefine `globalThis.fetch` fora de `jest.spyOn`, e nenhum desliga a guarda de `tests/setup.ts` |
+| Todo CT de frontend citado por ao menos um `it` | **Confirmado.** Os 47 CT da lista do AC têm ocorrência; nenhum faltando |
+| CT-38 estável em dez execuções | **10/10.** A ordem das promessas é controlada por resolvedores manuais guardados num `Map` — nenhum `setTimeout` participa |
+| Suíte de autenticação verde depois da feature | **Confirmado**, cliente HTTP e fila de renovação inclusos. Também verde sob `--runInBand --randomize` |
+| `userEvent`, nunca `fireEvent` | **Confirmado.** As quatro ocorrências de "fireEvent" em `src/` são **comentários** de specs anteriores explicando por que ele não é usado; nenhuma é chamada |
+| Backend continua verde | **579 testes, 0 falha** |
+
+### O que esta task entregou, e o que já vinha pronto
+
+Seis dos oito arquivos da tabela foram escritos nas tasks que os exigiam, porque os critérios de aceite delas eram comportamentais e não havia como aprová-las sem eles — cada review registra isso:
+
+| Arquivo | Onde foi escrito |
+|---|---|
+| `animal-images.spec.ts` | TASK-FRONTEND-015 |
+| `image-upload-field.spec.tsx` | TASK-FRONTEND-015 |
+| `animais-list-page.spec.tsx` | TASK-FRONTEND-016 |
+| `app-routes.spec.tsx` (guardas das novas rotas) | TASK-FRONTEND-016 |
+| `animal-form-page.spec.tsx` | TASK-FRONTEND-017 |
+| `select-field.spec.tsx` | **esta task** |
+| `toggle-field.spec.tsx` | **esta task** |
+| `validation.spec.ts` (`validateAnimalForm`) | **esta task** |
+
+Além dos previstos, esta task acrescentou três arquivos para fechar buracos de cobertura que a varredura encontrou: `use-state-cities.spec.ts`, `text-input-field.spec.tsx` e casos novos em `animais-list-page.spec.tsx`.
+
+### Um defeito real encontrado pela varredura de cobertura
+
+`useStateCities` calculava `statesError` e **o formulário nunca o lia**. Consequência: uma falha ao carregar os estados deixava o campo Estado silenciosamente vazio — exatamente o defeito que a RN-58 proíbe para as cidades ("nunca se apresenta como campo de seleção vazio, que se leria como *este estado não tem cidades*"), só que para os estados, onde a leitura seria a absurda "não há estados". O administrador ficaria sem entender por que não consegue escolher a cidade.
+
+Corrigido: o hook ganhou `retryStates`, o formulário passou a exibir o mesmo aviso com nova tentativa que já usava para as cidades, e o bloco virou o componente `FalhaDeCarga`, compartilhado pelos dois casos — que têm contrato idêntico. Coberto por `use-state-cities.spec.ts`.
+
+Vale o registro de método: o buraco não apareceu por leitura do código nem por teste falhando. Apareceu porque um ramo ficou descoberto, e perguntar "por que ninguém exercita este ramo?" levou a "porque ninguém o consome".
+
+### Outras bordas que a varredura fez emergir
+
+- **Resposta obsoleta que FALHA** (o espelho do CT-38 no caminho de erro): sem a guarda no `catch`, o campo passaria de povoado a "não foi possível carregar" sem que nada tivesse falhado para a UF corrente.
+- **Reescolher a mesma UF**: sem a guarda, apagaria a cidade já escolhida.
+- **`location.state` hostil**: cinco formas diferentes (ausente, texto solto, objeto sem a chave, mensagem numérica, mensagem vazia) são ignoradas. O estado da navegação é controlado pelo histórico do navegador, e um `as { message: string }` faria a tela renderizar o que viesse.
+- **Falha de exclusão que não é `ApiError`**: mensagem genérica, e o animal continua na lista.
+- **"Anterior" da paginação**: desabilitado na primeira página, funcional a partir da segunda.
+
+### Fora do escopo, registrado
+
+`src/config/env.ts` fica em 0% de cobertura. Ele é do MODULE-001, **não** foi tocado por esta feature, e está a zero porque `tests/env-mock.ts` substitui o módulo inteiro em toda a suíte — é o mecanismo que permite os testes rodarem sem variáveis de ambiente. Cobri-lo exigiria um teste que carregasse o módulo real, o que é assunto de uma task de dívida, não desta.

@@ -60,7 +60,7 @@ describe('ImageUploadField', () => {
     expect(screen.getByText('Nenhum arquivo escolhido')).toBeInTheDocument();
   });
 
-  it('CT-45: dois arquivos produzem duas miniaturas com "x" e a contagem', async () => {
+  it('CT-45/CT-95: dois arquivos produzem duas miniaturas, e cada "x" identifica QUAL imagem', async () => {
     const usuario = userEvent.setup();
 
     render(<Harness />);

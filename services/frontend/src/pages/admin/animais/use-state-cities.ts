@@ -27,6 +27,7 @@ export interface StateCities {
   readonly selectedUf: string;
   readonly selectUf: (uf: string) => void;
   readonly retryCities: () => void;
+  readonly retryStates: () => void;
 }
 
 export interface StateCitiesOptions {
@@ -63,8 +64,18 @@ export function useStateCities(opcoes: StateCitiesOptions): StateCities {
    */
   const ufEmVoo = useRef(initialUf);
 
+  /**
+   * Contador de tentativas da carga de estados. Trocar de valor e o que faz o
+   * efeito rodar de novo — `retryStates` nao pode chamar a API direto, porque a
+   * requisicao em voo precisa da mesma guarda de desmonte (`ativo`) que a
+   * primeira, e ela vive dentro do efeito.
+   */
+  const [tentativaDeEstados, setTentativaDeEstados] = useState(0);
+
   useEffect(() => {
     let ativo = true;
+
+    setStatesError(false);
 
     void geographyApi
       .listStates()
@@ -75,6 +86,12 @@ export function useStateCities(opcoes: StateCitiesOptions): StateCities {
       })
       .catch(() => {
         if (ativo) {
+          /**
+           * FALHA EXPLICITA, e nao lista vazia — mesma razao registrada abaixo
+           * para as cidades: um campo Estado sem opcoes se le como "nao ha
+           * estados", que e absurdo, e deixa o administrador sem entender por que
+           * nao consegue escolher a cidade.
+           */
           setStatesError(true);
         }
       });
@@ -82,6 +99,10 @@ export function useStateCities(opcoes: StateCitiesOptions): StateCities {
     return () => {
       ativo = false;
     };
+  }, [tentativaDeEstados]);
+
+  const retryStates = useCallback((): void => {
+    setTentativaDeEstados((atual) => atual + 1);
   }, []);
 
   const carregarCidades = useCallback((uf: string): void => {
@@ -154,5 +175,14 @@ export function useStateCities(opcoes: StateCitiesOptions): StateCities {
     carregarCidades(selectedUf);
   }, [carregarCidades, selectedUf]);
 
-  return { states, statesError, cities, citiesStatus, selectedUf, selectUf, retryCities };
+  return {
+    states,
+    statesError,
+    cities,
+    citiesStatus,
+    selectedUf,
+    selectUf,
+    retryCities,
+    retryStates,
+  };
 }

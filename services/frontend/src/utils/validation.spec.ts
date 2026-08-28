@@ -5,10 +5,12 @@ import { MESSAGES } from '~/utils/messages';
 import {
   hasFieldErrors,
   normalizeSpeciesName,
+  validateAnimalForm,
   validateEmailOnlyForm,
   validateLoginForm,
   validateRegisterForm,
   validateSpeciesNameForm,
+  type AnimalFormValues,
 } from '~/utils/validation';
 
 /**
@@ -459,5 +461,194 @@ describe('higienizacao de nome de especie — contrato de fonte com o backend', 
 
     // Assert
     expect(erros).toEqual({ name: MESSAGES.VALIDATION.FIELD_REQUIRED });
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/*  MODULE-002 / FEATURE-002 — validateAnimalForm                             */
+/* ------------------------------------------------------------------------- */
+
+describe('validateAnimalForm', () => {
+  /**
+   * Data FIXA, passada por parâmetro em todo caso de data.
+   *
+   * O relógio do processo de teste não participa: um caso que dependesse de
+   * `new Date()` mudaria de resultado à meia-noite, e a janela de 30 anos
+   * quebraria uma vez por ano sem ninguém entender por quê.
+   */
+  const HOJE = '2026-08-28';
+
+  const PREENCHIDO: AnimalFormValues = {
+    name: 'Theo',
+    speciesId: 'e1',
+    size: 'grande',
+    sex: 'macho',
+    cityId: 'c1',
+    birthDate: '',
+    description: '',
+  };
+
+  function com(ajustes: Partial<AnimalFormValues>): AnimalFormValues {
+    return { ...PREENCHIDO, ...ajustes };
+  }
+
+  function textoDe(tamanho: number): string {
+    return 'a'.repeat(tamanho);
+  }
+
+  it('CT-03: formulário completo e válido não produz erro nenhum', () => {
+    expect(validateAnimalForm(PREENCHIDO, HOJE)).toEqual({});
+  });
+
+  it('CT-09: os cinco campos obrigatórios ausentes são sinalizados DE UMA VEZ', () => {
+    // Arrange
+    const vazio: AnimalFormValues = {
+      name: '',
+      speciesId: '',
+      size: '',
+      sex: '',
+      cityId: '',
+      birthDate: '',
+      description: '',
+    };
+
+    // Act
+    const erros = validateAnimalForm(vazio, HOJE);
+
+    // Assert — o mapa inteiro de uma vez, e não um erro por chamada: é o que
+    // permite à tela sinalizar tudo num único envio.
+    expect(erros).toEqual({
+      name: MESSAGES.VALIDATION.FIELD_REQUIRED,
+      speciesId: MESSAGES.VALIDATION.FIELD_REQUIRED,
+      size: MESSAGES.VALIDATION.FIELD_REQUIRED,
+      sex: MESSAGES.VALIDATION.FIELD_REQUIRED,
+      cityId: MESSAGES.VALIDATION.FIELD_REQUIRED,
+    });
+    expect(hasFieldErrors(erros)).toBe(true);
+  });
+
+  it('RN-26a: o ESTADO não é validado — só a cidade trafega', () => {
+    // O formulário tem o campo Estado, mas ele existe para reduzir a lista de
+    // cidades. Validá-lo criaria um sexto obrigatório que o contrato não conhece.
+    expect(Object.keys(validateAnimalForm(PREENCHIDO, HOJE))).not.toContain('state');
+  });
+
+  describe('CT-04/CT-05: tamanho do nome, sobre o texto JÁ normalizado', () => {
+    it.each([
+      { tamanho: 1, esperado: MESSAGES.VALIDATION.ANIMAL_NAME_TOO_SHORT },
+      { tamanho: 61, esperado: MESSAGES.VALIDATION.ANIMAL_NAME_TOO_LONG },
+    ])('nome de $tamanho caracteres é recusado', ({ tamanho, esperado }) => {
+      expect(validateAnimalForm(com({ name: textoDe(tamanho) }), HOJE)).toEqual({ name: esperado });
+    });
+
+    it.each([2, 60])('nome de %i caracteres é aceito — o limite é inclusivo', (tamanho: number) => {
+      expect(validateAnimalForm(com({ name: textoDe(tamanho) }), HOJE)).toEqual({});
+    });
+
+    it('espaços repetidos são colapsados ANTES da contagem', () => {
+      // "a  b" tem 4 caracteres crus e 3 normalizados. O backend conta o
+      // normalizado, e contar o cru aqui faria os dois lados discordarem.
+      expect(validateAnimalForm(com({ name: `  ${textoDe(60)}  ` }), HOJE)).toEqual({});
+
+      // 29 + dois espaços + 30 = 61 crus, 60 normalizados: aceito.
+      expect(validateAnimalForm(com({ name: `${textoDe(29)}  ${textoDe(30)}` }), HOJE)).toEqual({});
+
+      // 30 + dois espaços + 30 = 62 crus, 61 normalizados: recusado.
+      expect(validateAnimalForm(com({ name: `${textoDe(30)}  ${textoDe(30)}` }), HOJE)).toEqual({
+        name: MESSAGES.VALIDATION.ANIMAL_NAME_TOO_LONG,
+      });
+    });
+
+    it('nome só de espaços conta como campo em branco, e não como nome curto', () => {
+      expect(validateAnimalForm(com({ name: '   ' }), HOJE)).toEqual({
+        name: MESSAGES.VALIDATION.FIELD_REQUIRED,
+      });
+    });
+  });
+
+  describe('CT-21: tamanho da descrição', () => {
+    it('descrição vazia é válida — o campo é opcional (RN-22)', () => {
+      expect(validateAnimalForm(com({ description: '' }), HOJE)).toEqual({});
+    });
+
+    it('1000 caracteres é aceito', () => {
+      expect(validateAnimalForm(com({ description: textoDe(1000) }), HOJE)).toEqual({});
+    });
+
+    it('1001 caracteres é recusado', () => {
+      expect(validateAnimalForm(com({ description: textoDe(1001) }), HOJE)).toEqual({
+        description: MESSAGES.VALIDATION.DESCRIPTION_TOO_LONG,
+      });
+    });
+  });
+
+  describe('CT-15/CT-17: data de nascimento', () => {
+    it('data ausente é válida — o campo é opcional', () => {
+      expect(validateAnimalForm(com({ birthDate: '' }), HOJE)).toEqual({});
+    });
+
+    it('HOJE é aceito, e não tratado como futuro', () => {
+      // O caso que quebraria se a comparação passasse por `Date`: `new Date(hoje)`
+      // é meia-noite UTC, e a leitura local a oeste de Greenwich devolveria o dia
+      // anterior durante as três primeiras horas de cada dia no Brasil.
+      expect(validateAnimalForm(com({ birthDate: HOJE }), HOJE)).toEqual({});
+    });
+
+    it('CT-15: um dia no futuro é recusado', () => {
+      expect(validateAnimalForm(com({ birthDate: '2026-08-29' }), HOJE)).toEqual({
+        birthDate: MESSAGES.VALIDATION.BIRTH_DATE_IN_FUTURE,
+      });
+    });
+
+    it('CT-17: 31 anos atrás é recusado', () => {
+      expect(validateAnimalForm(com({ birthDate: '1995-08-28' }), HOJE)).toEqual({
+        birthDate: MESSAGES.VALIDATION.BIRTH_DATE_TOO_OLD,
+      });
+    });
+
+    it('exatamente 30 anos atrás é aceito — o limite é inclusivo', () => {
+      expect(validateAnimalForm(com({ birthDate: '1996-08-28' }), HOJE)).toEqual({});
+    });
+
+    it('um dia além dos 30 anos é recusado', () => {
+      expect(validateAnimalForm(com({ birthDate: '1996-08-27' }), HOJE)).toEqual({
+        birthDate: MESSAGES.VALIDATION.BIRTH_DATE_TOO_OLD,
+      });
+    });
+
+    it('a janela é calculada a partir do `hoje` recebido, e não do relógio do processo', () => {
+      // Mesma data de nascimento, dois "hoje" diferentes: aceita num, recusada no
+      // outro. É o que prova que a função não consulta o relógio quando o
+      // parâmetro é passado.
+      expect(validateAnimalForm(com({ birthDate: '1996-08-28' }), '2026-08-28')).toEqual({});
+      expect(validateAnimalForm(com({ birthDate: '1996-08-28' }), '2027-08-28')).toEqual({
+        birthDate: MESSAGES.VALIDATION.BIRTH_DATE_TOO_OLD,
+      });
+    });
+  });
+
+  it('CT-06: vários problemas em campos diferentes saem JUNTOS no mesmo mapa', () => {
+    // Arrange & Act
+    const erros = validateAnimalForm(
+      com({ name: 'a', speciesId: '', birthDate: '2026-12-01', description: textoDe(1001) }),
+      HOJE,
+    );
+
+    // Assert — a tela sinaliza tudo num envio só (CA-12).
+    expect(erros).toEqual({
+      name: MESSAGES.VALIDATION.ANIMAL_NAME_TOO_SHORT,
+      speciesId: MESSAGES.VALIDATION.FIELD_REQUIRED,
+      birthDate: MESSAGES.VALIDATION.BIRTH_DATE_IN_FUTURE,
+      description: MESSAGES.VALIDATION.DESCRIPTION_TOO_LONG,
+    });
+  });
+
+  it('sem o parâmetro `hoje`, usa o relógio do navegador — e uma data futura continua recusada', () => {
+    // A única verificação que toca o relógio real, e ela é sobre o default existir.
+    const amanha = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+    expect(validateAnimalForm(com({ birthDate: amanha }))).toEqual({
+      birthDate: MESSAGES.VALIDATION.BIRTH_DATE_IN_FUTURE,
+    });
   });
 });

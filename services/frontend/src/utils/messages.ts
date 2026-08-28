@@ -334,6 +334,7 @@ export const MESSAGES = {
     EMPTY_LIST: 'Nenhum animal cadastrado ainda. Cadastre o primeiro no botão acima.',
     LOAD_ERROR: 'Não foi possível carregar os animais. Tente novamente.',
     CITIES_LOAD_ERROR: 'Não foi possível carregar as cidades. Tente novamente.',
+    STATES_LOAD_ERROR: 'Não foi possível carregar os estados. Tente novamente.',
     STATUS_UPDATE_ERROR: 'Não foi possível atualizar o status. Tente novamente.',
 
     CREATE_SUCCESS: 'Animal cadastrado com sucesso.',

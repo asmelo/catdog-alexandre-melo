@@ -80,6 +80,35 @@ type EstadoDaCarga = 'loading' | 'error' | 'ready';
  * ate cinco imagens ja escolhidas — por causa de um `503` do armazenamento e o
  * defeito que faz o administrador desistir da tela (CT-55, CT-66, CA-29).
  */
+/**
+ * Aviso de falha de uma carga de APOIO, com a saida obrigatoria.
+ *
+ * Usado pelos estados e pelas cidades, que tem exatamente o mesmo contrato: a
+ * falha nao pode se apresentar como campo de selecao vazio, o restante do
+ * formulario continua preenchivel, e precisa haver como tentar de novo sem
+ * recarregar a pagina e perder o que ja foi digitado.
+ */
+function FalhaDeCarga({
+  message,
+  onRetry,
+}: {
+  readonly message: string;
+  readonly onRetry: () => void;
+}): ReactElement {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-field border-[1.5px] border-brand-orange bg-surface-input px-4 py-3">
+      <p className="text-[0.8rem] font-semibold text-ink">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="shrink-0 rounded-field border-[1.5px] border-brand-purple px-3 py-1.5 text-[0.78rem] font-extrabold text-brand-purple transition-colors hover:bg-brand-purple-light focus-visible:shadow-focus-ring focus-visible:outline-none"
+      >
+        {MESSAGES.ANIMALS.RETRY_BUTTON}
+      </button>
+    </div>
+  );
+}
+
 export function AnimalFormPage(): ReactElement {
   const navigate = useNavigate();
   const { id } = useParams<{ readonly id: string }>();
@@ -524,6 +553,18 @@ export function AnimalFormPage(): ReactElement {
           />
         </div>
 
+        {/*
+          A falha de ESTADOS pelo mesmo criterio da de cidades: um campo Estado sem
+          opcoes se leria como "nao ha estados", que e absurdo, e deixaria o
+          administrador sem entender por que nao consegue escolher a cidade.
+        */}
+        {geografia.statesError && (
+          <FalhaDeCarga
+            message={MESSAGES.ANIMALS.STATES_LOAD_ERROR}
+            onRetry={geografia.retryStates}
+          />
+        )}
+
         <SelectField
           id="cityId"
           name="cityId"
@@ -545,18 +586,10 @@ export function AnimalFormPage(): ReactElement {
           formulario continua preenchivel.
         */}
         {geografia.citiesStatus === 'error' && (
-          <div className="flex items-center justify-between gap-3 rounded-field border-[1.5px] border-brand-orange bg-surface-input px-4 py-3">
-            <p className="text-[0.8rem] font-semibold text-ink">
-              {MESSAGES.ANIMALS.CITIES_LOAD_ERROR}
-            </p>
-            <button
-              type="button"
-              onClick={geografia.retryCities}
-              className="shrink-0 rounded-field border-[1.5px] border-brand-purple px-3 py-1.5 text-[0.78rem] font-extrabold text-brand-purple transition-colors hover:bg-brand-purple-light focus-visible:shadow-focus-ring focus-visible:outline-none"
-            >
-              {MESSAGES.ANIMALS.RETRY_BUTTON}
-            </button>
-          </div>
+          <FalhaDeCarga
+            message={MESSAGES.ANIMALS.CITIES_LOAD_ERROR}
+            onRetry={geografia.retryCities}
+          />
         )}
 
         <TextareaField
