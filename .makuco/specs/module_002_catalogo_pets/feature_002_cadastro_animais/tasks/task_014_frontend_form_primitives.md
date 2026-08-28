@@ -108,7 +108,7 @@ A base de componentes cobre hoje apenas o formulário de autenticação: campo d
 | `ToggleField`: estado não comunicado só por cor (RNF-17) | **Confirmado.** Três canais: posição do disco, estado nativo do input (`role="switch"` → "ligado/desligado") e rótulo associado |
 | `DateField` preserva `"2022-11-05"` em qualquer fuso | **Confirmado** em `date-field.spec.tsx`, incluindo a ida e volta por um harness controlado de verdade |
 | Contador do `TextareaField` é `aria-live="polite"` | **Confirmado** em `textarea-field.spec.tsx` |
-| Suíte de login verde sem alterar o arquivo de teste | **Confirmado.** `login-page.spec.tsx` **não foi tocado**; 350 testes verdes |
+| Suíte de login verde sem alterar o arquivo de teste | **Confirmado.** `login-page.spec.tsx` **não foi tocado**; 354 testes verdes em 25 suítes |
 | Dependências de execução continuam três | **Confirmado.** `react`, `react-dom`, `react-router-dom`. `package.json` sem diff |
 
 ### Decisões de implementação que a task não previa
