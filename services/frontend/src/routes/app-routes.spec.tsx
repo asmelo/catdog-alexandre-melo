@@ -7,7 +7,7 @@ import { App } from '~/App';
 import { AuthContext } from '~/contexts/auth/auth-context';
 import { AdminLayout } from '~/layouts/admin-layout';
 import { ClientLayout } from '~/layouts/client-layout';
-import { ADMIN_DEFAULT_PATH, ROUTE_PATHS } from '~/routes/route-paths';
+import { ADMIN_DEFAULT_PATH, ROUTE_PATHS, homePathForRole } from '~/routes/route-paths';
 import * as authApi from '~/services/api/auth-api';
 import * as animalsApi from '~/services/api/animals-api';
 import * as speciesApi from '~/services/api/species-api';
@@ -679,5 +679,95 @@ describe('AppRoutes — rotas de animais', () => {
 
     // Assert
     expect(screen.queryByText('Página não encontrada')).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/*  MODULE-002 / FEATURE-003 — a vitrine pública e a regressão das guardas     */
+/* ------------------------------------------------------------------------- */
+
+describe('AppRoutes — a vitrine é pública (FEATURE-003)', () => {
+  it.each([
+    { cenario: 'sem sessão', estado: ANONIMO },
+    { cenario: 'com sessão de `cliente`', estado: AUTENTICADO_CLIENTE },
+    { cenario: 'com sessão de `admin`', estado: AUTENTICADO_ADMIN },
+  ])(
+    'CT-01/CT-04/CT-113: /animais monta $cenario, SEM redirecionamento',
+    ({ estado }: { readonly estado: EstadoDublado }) => {
+      // Arrange & Act
+      renderizar(estado, ROUTE_PATHS.SHOWCASE);
+
+      // Assert — as três guardas existentes falhariam aqui, cada uma por um
+      // motivo diferente. Rota pública é a AUSÊNCIA de guarda.
+      expect(rotaAtual()).toBe(ROUTE_PATHS.SHOWCASE);
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Animais para adoção');
+    },
+  );
+
+  it('durante o bootstrap a vitrine JÁ monta — ela não espera a sessão', () => {
+    // Arrange & Act — nas rotas protegidas o bootstrap segura a renderização;
+    // aqui não há o que esperar.
+    renderizar(EM_BOOTSTRAP, ROUTE_PATHS.SHOWCASE);
+
+    // Assert
+    expect(rotaAtual()).toBe(ROUTE_PATHS.SHOWCASE);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Animais para adoção');
+  });
+
+  it('/animais/algo cai na 404 global — o bloco NÃO tem catch-all próprio', () => {
+    // Arrange & Act — diferente de `/admin/*` e `/minha-area/*`, onde o catch-all
+    // existe dentro da guarda para manter a área inteira atrás dela.
+    renderizar(ANONIMO, `${ROUTE_PATHS.SHOWCASE}/qualquer-coisa`);
+
+    // Assert
+    expect(screen.getByText('Página não encontrada')).toBeInTheDocument();
+  });
+});
+
+describe('AppRoutes — as guardas existentes NÃO afrouxaram (CT-114, CT-115, CT-118)', () => {
+  it.each([ROUTE_PATHS.CLIENT_HOME, ROUTE_PATHS.ADMIN_ANIMALS, ROUTE_PATHS.ADMIN_SPECIES])(
+    'CT-114: %s sem sessão continua indo para o login',
+    (rota: string) => {
+      renderizar(ANONIMO, rota);
+
+      expect(rotaAtual()).toBe(ROUTE_PATHS.LOGIN);
+    },
+  );
+
+  it('CT-115: o `cliente` em rota de admin continua sendo devolvido à sua área', () => {
+    renderizar(AUTENTICADO_CLIENTE, ROUTE_PATHS.ADMIN_ANIMALS);
+
+    expect(rotaAtual()).toBe(ROUTE_PATHS.CLIENT_HOME);
+  });
+
+  it('CT-115: o `admin` em rota de cliente continua sendo devolvido à sua área', () => {
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.CLIENT_HOME);
+
+    // A guarda devolve a `homePathForRole('admin')` (`/admin`), que por sua vez
+    // redireciona para `ADMIN_DEFAULT_PATH` — dois saltos, e a rota final é a da
+    // primeira área administrativa.
+    expect(rotaAtual()).toBe(ADMIN_DEFAULT_PATH);
+  });
+
+  it.each([
+    { cenario: 'sem sessão', estado: ANONIMO, destino: ROUTE_PATHS.LOGIN },
+    { cenario: 'como `cliente`', estado: AUTENTICADO_CLIENTE, destino: ROUTE_PATHS.CLIENT_HOME },
+    { cenario: 'como `admin`', estado: AUTENTICADO_ADMIN, destino: ADMIN_DEFAULT_PATH },
+  ])(
+    'CT-118: a raiz `/` $cenario continua indo para $destino — a vitrine NÃO a alterou',
+    ({ estado, destino }: { readonly estado: EstadoDublado; readonly destino: string }) => {
+      // A raiz permanece dentro do `ProtectedRoute`; movê-la é recomendação de
+      // acompanhamento, explicitamente fora do escopo da feature.
+      renderizar(estado, ROUTE_PATHS.ROOT);
+
+      expect(rotaAtual()).toBe(destino);
+    },
+  );
+
+  it('a vitrine NÃO entrou em `homePathForRole` — o destino pós-login não mudou', () => {
+    // Incluí-la seria uma regressão silenciosa na autenticação, que nenhum teste
+    // desta feature pegaria.
+    expect(homePathForRole('admin')).toBe(ROUTE_PATHS.ADMIN_HOME);
+    expect(homePathForRole('cliente')).toBe(ROUTE_PATHS.CLIENT_HOME);
   });
 });

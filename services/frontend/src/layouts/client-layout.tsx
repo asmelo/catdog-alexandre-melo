@@ -41,8 +41,23 @@ export function ClientLayout(): ReactElement {
           <CatDogLogo size={28} />
 
           <nav aria-label="Navegação do cliente" className="flex items-center gap-1">
+            {/*
+              `end` continua obrigatorio: sem ele, "Minha área" ficaria marcado
+              como ativo tambem quando a vitrine estivesse aberta.
+            */}
             <NavLink to={ROUTE_PATHS.CLIENT_HOME} end className={classesDoItemDeNavegacao}>
               Minha área
+            </NavLink>
+            {/*
+              O caminho para a vitrine. Sem ele o cliente autenticado nao tem como
+              chegar la pela aplicacao (CT-116).
+
+              Aponta para uma rota PUBLICA, e nao administrativa: a regra central
+              deste arquivo — nenhum controle de `/admin` no DOM — continua
+              valendo intacta (CT-117).
+            */}
+            <NavLink to={ROUTE_PATHS.SHOWCASE} className={classesDoItemDeNavegacao}>
+              Animais para adoção
             </NavLink>
           </nav>
 

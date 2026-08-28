@@ -6,6 +6,7 @@ import { useAuth } from '~/contexts/auth/use-auth';
 import { AdminLayout } from '~/layouts/admin-layout';
 import { AuthLayout } from '~/layouts/auth-layout';
 import { ClientLayout } from '~/layouts/client-layout';
+import { ShowcaseLayout } from '~/layouts/showcase-layout';
 import { AnimaisListPage } from '~/pages/admin/animais/animais-list-page';
 import { AnimalFormPage } from '~/pages/admin/animais/animal-form-page';
 import { SpeciesPage } from '~/pages/admin/species-page';
@@ -15,6 +16,7 @@ import { LoginPage } from '~/pages/auth/login-page';
 import { RegisterPage } from '~/pages/auth/register-page';
 import { ClientHomePage } from '~/pages/client/client-home-page';
 import { NotFoundPage } from '~/pages/errors/not-found-page';
+import { ShowcasePage } from '~/pages/showcase/showcase-page';
 import { ProtectedRoute } from '~/routes/protected-route';
 import { PublicOnlyRoute } from '~/routes/public-only-route';
 import { ADMIN_DEFAULT_PATH, ROUTE_PATHS, homePathForRole } from '~/routes/route-paths';
@@ -87,6 +89,33 @@ export function AppRoutes(): ReactElement {
       <Route element={<AuthLayout />}>
         <Route path={ROUTE_PATHS.CHECK_EMAIL} element={<CheckEmailPage />} />
         <Route path={ROUTE_PATHS.CONFIRM_EMAIL} element={<ConfirmEmailPage />} />
+      </Route>
+
+      {/*
+        ========================= A VITRINE PUBLICA =========================
+
+        Fora de `PublicOnlyRoute`, de `ProtectedRoute` e de `RoleRoute`. NAO
+        FALTOU GUARDA: rota publica e a AUSENCIA de guarda, e nenhuma das tres
+        serve aqui — cada uma falha por um motivo diferente.
+
+        - `ProtectedRoute` mandaria ao login quem nao tem sessao, que e
+          exatamente o publico-alvo desta tela;
+        - `RoleRoute allow={['cliente']}` expulsaria o `admin`;
+        - `PublicOnlyRoute` expulsaria quem TEM sessao — ele existe para impedir
+          que alguem logado volte ao formulario de login.
+
+        Criar uma quarta guarda "publica" tambem nao serve: uma guarda que nao
+        guarda nada e ruido, e daria a impressao de haver uma decisao de acesso
+        onde nao ha.
+
+        SEM CATCH-ALL PROPRIO, ao contrario de `/admin/*` e de `/minha-area/*`:
+        `/animais/qualquer-coisa` deve cair no `*` global e renderizar a 404, e
+        nao uma vitrine vazia. Naqueles dois o catch-all existe DENTRO da guarda
+        para manter a area inteira atras dela — motivo que nao se aplica a uma
+        rota sem guarda.
+      */}
+      <Route element={<ShowcaseLayout />}>
+        <Route path={ROUTE_PATHS.SHOWCASE} element={<ShowcasePage />} />
       </Route>
 
       {/* Exigem sessao. A role decide qual area. */}

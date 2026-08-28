@@ -117,3 +117,50 @@ Nenhuma. `/animais` é pública por decisão de produto: visitante, `cliente` e 
 
 - **Requires**: FEATURE-002 do MODULE-001 (`useAuth` com `status`/`user`/`logout`, `ROUTE_PATHS`, `CatDogLogo`, tokens do Tailwind, `ClientLayout`, `app-routes.tsx`).
 - **Blocks**: TASK-FRONTEND-010 (a página real substitui o placeholder desta rota), TASK-FRONTEND-011.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+**530 testes, 35 suítes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos. Três dependências de execução, as mesmas.
+
+| Critério de aceite | Resultado |
+|---|---|
+| `/animais` monta sem sessão, sem ir ao login (CT-01, CT-113) | **Confirmado** |
+| `admin` autenticado monta a página, sem ir a `/admin` (CT-04) | **Confirmado** |
+| `cliente` autenticado monta a página, sem ir a `/minha-area` | **Confirmado** |
+| Anônimo: logotipo, "Entrar", "Criar conta", sem identificação (CT-05) | **Confirmado** |
+| Autenticado: nome e "Sair"; **e-mail ausente do documento** (CT-06) | **Confirmado** com `document.body.textContent` — a varredura pega o e-mail em qualquer profundidade |
+| `bootstrapping`: nenhuma das duas alternativas no DOM (CT-07) | **Confirmado**, e o logotipo e o conteúdo continuam lá: a vitrine não espera a sessão |
+| "Sair" permanece em `/animais` (CT-08) | **Confirmado.** `logout` chamado uma vez, rota inalterada |
+| "Sair" anuncia uma única vez (CT-09) | **Confirmado** com `toHaveAccessibleName('Sair')` e `aria-hidden` no SVG |
+| O logotipo aponta para a vitrine | **Confirmado** |
+| `/minha-area` e `/admin/animais` sem sessão vão ao login (CT-114) | **Confirmado**, nas três rotas protegidas |
+| `cliente` em rota de admin e vice-versa (CT-115) | **Confirmado** |
+| A raiz `/` inalterada nos três casos (CT-118) | **Confirmado** |
+| `/animais/algo` cai na 404 global | **Confirmado.** O bloco não tem catch-all próprio |
+| `ClientLayout`: item novo **e** nenhum controle administrativo (CT-116, CT-117) | **Confirmado** por ausência no DOM, e não por estilo |
+| Specs existentes continuam verdes | **Confirmado.** `app-routes.spec.tsx`, `role-route.spec.tsx` e `route-paths.spec.ts` sem alteração de casos |
+| Nenhuma dependência nova | **Confirmado** |
+
+### Notas de implementação
+
+**A vitrine ficou fora de `HOME_POR_ROLE`, e há teste para isso.** Incluí-la mudaria o destino pós-login — uma regressão silenciosa na autenticação que nenhum teste *desta* feature pegaria. O caso afirma `homePathForRole('admin') === '/admin'` e `homePathForRole('cliente') === '/minha-area'`.
+
+**O bloco de rota tem comentário próprio explicando por que cada uma das três guardas não serve.** Sem ele, a próxima pessoa a ler a árvore conclui que faltou uma guarda e "corrige" — restaurando exatamente o defeito que a Decisão A eliminou. O comentário nomeia o modo de falha de cada uma.
+
+**`<Link>` no logotipo com `aria-label="CatDog — início"`.** O `CatDogLogo` desenha um SVG; sem o rótulo, o link seria anunciado pela URL. Aponta para a própria vitrine, e não para `/`: a raiz decide o destino por role dentro do `ProtectedRoute` e mandaria o visitante anônimo ao login — de dentro da única tela que não exige sessão.
+
+**Sem `<nav>` no cabeçalho.** A captura mostra o cabeçalho sem itens de navegação, e uma região de navegação com um único link seria ruído para quem percorre a página por landmarks. Há teste afirmando a ausência.
+
+### Um ajuste de expectativa durante a escrita do teste
+
+O caso CT-115 ("`admin` em rota de cliente") foi escrito esperando `/admin` e mediu `/admin/especies`. A expectativa é que estava errada: a guarda devolve a `homePathForRole('admin')`, que é `/admin`, e `/admin` **redireciona** para `ADMIN_DEFAULT_PATH`. São dois saltos, e o comportamento observável é o segundo. Corrigido no teste, com o encadeamento registrado no comentário.
+
+### Arquivos de teste escritos aqui
+
+`showcase-layout.spec.tsx` e as extensões de `app-routes.spec.tsx` constam da TASK-FRONTEND-011. Foram escritos nesta task porque **todos os critérios de aceite dela são comportamentais** — em particular os de regressão das guardas, que são o risco declarado da task e não podem esperar cinco tasks para serem verificados.
+
+`client-layout.spec.tsx` a 011 lista como *modify*, mas o arquivo **não existia**: o `ClientLayout` era coberto apenas de forma indireta por `app-routes.spec.tsx`. Foi criado aqui, cobrindo o item novo e a regra de ausência de controle administrativo.

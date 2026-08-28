@@ -31,6 +31,16 @@ export const ROUTE_PATHS = {
   ADMIN_ANIMALS_EDIT: '/admin/animais/:id/editar',
   ADMIN_SPECIES: '/admin/especies',
   CLIENT_HOME: '/minha-area',
+  /**
+   * A VITRINE PUBLICA. Deliberadamente FORA de `HOME_POR_ROLE`: ela nao e home de
+   * perfil nenhum, e inclui-la mudaria o destino pos-login — regressao silenciosa
+   * na autenticacao, que nenhum teste desta feature pegaria.
+   *
+   * `/animais` e nao `/animals`: a captura mostra o ingles, e a convencao de
+   * caminhos em PT-BR ja foi aplicada duas vezes neste modulo (`/admin/especies`,
+   * `/admin/animais`). Rotas de API seguem em ingles.
+   */
+  SHOWCASE: '/animais',
 } as const;
 
 /**
