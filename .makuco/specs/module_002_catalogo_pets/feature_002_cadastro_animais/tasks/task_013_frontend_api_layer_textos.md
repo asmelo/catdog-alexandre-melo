@@ -103,3 +103,34 @@ Entrega a camada que as duas telas consomem: uma função por endpoint, os tipos
 
 - **Requires**: TASK-FRONTEND-012 (`FormData` e `buildQuery`), TASK-BACKEND-005 e TASK-BACKEND-006 (contratos publicados).
 - **Blocks**: TASK-FRONTEND-016 e TASK-FRONTEND-017.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO — com um desvio de nomenclatura registrado abaixo
+
+| Critério de aceite | Resultado |
+|---|---|
+| `listAnimals({ page: 2, pageSize: 50 })` → `/animals?page=2&pageSize=50` | **Confirmado.** Asserção sobre a URL que o `fetch` recebe (`/api/animals?page=2&pageSize=50`), não sobre o caminho lógico |
+| `createAnimal` passa o próprio `FormData`, sem `Content-Type` | **Confirmado.** `toBe` sobre o mesmo objeto e `not.toHaveProperty('Content-Type')` |
+| `changeAnimalStatus` envia JSON com exatamente `status` e `updatedAt` | **Confirmado** com `toEqual` sobre o corpo inteiro — `toMatchObject` deixaria passar chave extra, que o backend recusa com 400 (CT-75) |
+| `ApiError` sobe sem captura nem reescrita | **Confirmado** com `ANIMAL_STALE_UPDATE`: `status`, `code` e `message` chegam como vieram |
+| Nenhuma mensagem do backend duplicada no catálogo | **Confirmado por teste**, e não por leitura: `messages.spec.ts` varre os textos do bloco `ANIMALS` (incluindo o que as duas funções produzem) contra os 8 literais do `animals.messages.ts` |
+| Contagem 0, 1 e 2 | **Confirmado.** "Nenhum animal cadastrado", "Total: 1 animal", "Total: 2 animais" |
+| Rótulo faltando quebra a compilação | **Confirmado por construção:** os três mapas são `Readonly<Record<União, string>>`. Um caso extra cobre o inverso — chave sobrando, que o tipo aceitaria em silêncio |
+| Sem `any` e sem `!` | **Confirmado.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos; nenhuma asserção de não-nulo nos 6 arquivos |
+
+Suíte do frontend: **344 testes, 23 suítes, 0 falha.**
+
+### Desvio de nomenclatura, deliberado
+
+A task pede as chaves `ADMIN_ANIMAIS`, `ADMIN_ANIMAIS_NOVO` e `ADMIN_ANIMAIS_EDITAR`. Foram criadas como **`ADMIN_ANIMALS_NEW`** e **`ADMIN_ANIMALS_EDIT`**, ao lado do `ADMIN_ANIMALS` que já existia desde a FEATURE-001.
+
+A razão: a regra que a própria task enuncia é "caminhos de interface em PT-BR e de API em inglês", e ela é sobre o **valor** do caminho — que está em PT-BR (`/admin/animais/novo`, `/admin/animais/:id/editar`), como pedido. O **nome da chave** segue outra convenção, em vigor no arquivo inteiro: `ADMIN_HOME`, `ADMIN_SPECIES`, `CHECK_EMAIL`, `CLIENT_HOME`. Adotar `ADMIN_ANIMAIS` criaria a única chave em português do conjunto — e obrigaria a renomear o `ADMIN_ANIMALS` existente, que já tem três consumidores (`admin-layout.tsx` e dois specs).
+
+### Notas de implementação
+
+- `adminAnimalEditPath(id)` acompanha `ADMIN_ANIMALS_EDIT` porque os dois usos do mesmo caminho — declarar a rota (com `:id` literal) e navegar até um animal — são indistinguíveis para o compilador. Sem o auxiliar, `<Navigate to={ROUTE_PATHS.ADMIN_ANIMALS_EDIT}>` compila e leva o usuário a uma página inexistente. Aplica `encodeURIComponent` porque o `id` vem de dado, não de literal.
+- `ADMIN_DEFAULT_PATH` **não** foi alterado nesta task. O comentário dele prevê a mudança para animais, mas ela pertence à task que publica a tela — mudá-lo agora apontaria `/admin` para uma rota que ainda não existe.
+- `animals-api.spec.ts` não consta da tabela de arquivos da task, e a TASK-FRONTEND-018 também não o prevê. Foi criado porque quatro dos oito critérios de aceite são sobre o que sai no `fetch`, e não há onde verificá-los depois: a 018 dubla as funções de API, então nenhum teste dela observa a URL nem o corpo real. É o mesmo par que a FEATURE-001 já tinha (`species-api.ts` + `species-api.spec.ts`).

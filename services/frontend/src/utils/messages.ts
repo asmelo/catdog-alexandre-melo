@@ -250,6 +250,95 @@ export const MESSAGES = {
   },
 
   /**
+   * Telas de animais (`/admin/animais`, `/admin/animais/novo`,
+   * `/admin/animais/:id/editar`).
+   *
+   * MESMO CRITERIO do bloco `SPECIES`: so entra aqui o que NENHUMA resposta da
+   * API carrega. As frases de sucesso entram porque o `POST` e os dois `PATCH`
+   * devolvem o recurso e o `DELETE` devolve `204` — nao ha `message` a exibir
+   * depois de uma operacao bem-sucedida. `EMPTY_LIST` nasce de `items: []`, e as
+   * tres `*_ERROR` nascem de falhas cujo corpo, quando existe, nao descreve a
+   * tela.
+   *
+   * O QUE NAO ESTA AQUI, nomeado pela chave de origem em vez de transcrito, para
+   * que ninguem se sinta convidado a copiar: do `animals.messages.ts` do backend,
+   * `ANIMAL_NOT_FOUND`, `SPECIES_NOT_FOUND`, `CITY_NOT_FOUND`,
+   * `ANIMAL_STALE_UPDATE`, `IMAGE_LIMIT_EXCEEDED`, `IMAGE_TYPE_NOT_ALLOWED`,
+   * `IMAGE_TOO_LARGE`, `IMAGE_EMPTY` e `IMAGE_UPLOAD_FAILED`. Todas chegam
+   * prontas em `ApiError.message`; a tela ramifica pelo `code` e exibe o
+   * `message` que veio.
+   *
+   * As frases de validacao LOCAL sao a excecao justificada, e pelo mesmo motivo
+   * de sempre: elas reprovam o formulario ANTES de qualquer requisicao, entao nao
+   * existe resposta da API que pudesse carrega-las.
+   */
+  ANIMALS: {
+    PAGE_TITLE: 'Animais',
+    CREATE_TITLE: 'Cadastrar Animal',
+    EDIT_TITLE: 'Editar Animal',
+    CREATE_BUTTON: 'Cadastrar Animal',
+    SAVE_BUTTON: 'Salvar',
+    CANCEL_BUTTON: 'Cancelar',
+    EDIT_ACTION: 'Editar',
+    DELETE_ACTION: 'Excluir',
+    /** Nome da regiao da lista, anunciado ao entrar nela. */
+    LIST_LABEL: 'Animais cadastrados',
+    LOADING_LABEL: 'Carregando animais…',
+    RETRY_BUTTON: 'Tentar novamente',
+
+    EMPTY_LIST: 'Nenhum animal cadastrado ainda. Cadastre o primeiro no botão acima.',
+    LOAD_ERROR: 'Não foi possível carregar os animais. Tente novamente.',
+    CITIES_LOAD_ERROR: 'Não foi possível carregar as cidades. Tente novamente.',
+    STATUS_UPDATE_ERROR: 'Não foi possível atualizar o status. Tente novamente.',
+
+    CREATE_SUCCESS: 'Animal cadastrado com sucesso.',
+    UPDATE_SUCCESS: 'Animal atualizado com sucesso.',
+    STATUS_UPDATE_SUCCESS: 'Status atualizado com sucesso.',
+    DELETE_SUCCESS: 'Animal excluído com sucesso.',
+
+    /** Estados do seletor de cidade, que depende do estado escolhido (RN-56). */
+    CITIES_LOADING: 'Carregando cidades...',
+    CITY_NEEDS_STATE: 'Escolha primeiro o estado',
+
+    /**
+     * Exibido no lugar da idade quando `ageInYears` e `null`. NAO e o texto de
+     * `ageInYears === 0`, que e uma idade conhecida e vale "menos de 1 ano"
+     * (RN-21).
+     */
+    AGE_UNKNOWN: 'Idade não informada',
+
+    IMAGES_LABEL: 'Imagens (máx. 5 — JPEG ou PNG, até 5 MB cada)',
+    CHOOSE_FILES: 'Escolher arquivos',
+    NO_FILES_CHOSEN: 'Nenhum arquivo escolhido',
+
+    /**
+     * FUNCAO e nao template solto, pela mesma razao registrada em
+     * `SPECIES.deleteConfirmation`: a frase interpola o nome e precisa sair
+     * IDENTICA em toda chamada. As aspas sao as CURVAS `“ ”` da tabela de
+     * mensagens da spec, e nao `" "` — o criterio compara caractere a caractere.
+     */
+    deleteConfirmation(nome: string): string {
+      return `Excluir o animal “${nome}”? Esta ação não pode ser desfeita.`;
+    },
+
+    /**
+     * Concordancia do rodape de contagem (RN-43, CT-24, CA-06).
+     *
+     * TRES formas e nao duas: a captura de tela usada como fonte da verdade exibe
+     * "Total: 1 animais", que e defeito de concordancia na PROPRIA fonte e esta
+     * corrigido por decisao da spec. E o zero nao vira "Total: 0 animais" — vira
+     * uma frase propria, porque "total zero" e uma forma que ninguem escreve.
+     */
+    totalLabel(total: number): string {
+      if (total === 0) {
+        return 'Nenhum animal cadastrado';
+      }
+
+      return total === 1 ? 'Total: 1 animal' : `Total: ${String(total)} animais`;
+    },
+  },
+
+  /**
    * Area interna do cliente. Minima por contrato: existe para tornar o
    * redirecionamento por role verificavel, e o conteudo real e de outras
    * features.

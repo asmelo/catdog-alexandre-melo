@@ -21,9 +21,33 @@ export const ROUTE_PATHS = {
   CONFIRM_EMAIL: '/confirmar-email',
   ADMIN_HOME: '/admin',
   ADMIN_ANIMALS: '/admin/animais',
+  ADMIN_ANIMALS_NEW: '/admin/animais/novo',
+  /**
+   * Caminho com PARAMETRO, para declarar a rota. Para NAVEGAR ate um animal
+   * concreto use `adminAnimalEditPath(id)` — interpolar `:id` a mao no ponto de
+   * uso e o que produz um `/admin/animais/:id/editar` literal na barra de
+   * endereco quando alguem esquece a substituicao.
+   */
+  ADMIN_ANIMALS_EDIT: '/admin/animais/:id/editar',
   ADMIN_SPECIES: '/admin/especies',
   CLIENT_HOME: '/minha-area',
 } as const;
+
+/**
+ * Caminho de edicao de um animal concreto.
+ *
+ * Existe para que `ADMIN_ANIMALS_EDIT` — que carrega o `:id` literal porque e a
+ * DECLARACAO da rota — nunca seja usado como destino de navegacao. Sao usos
+ * diferentes do mesmo caminho, e o compilador nao distingue os dois: `<Navigate
+ * to={ROUTE_PATHS.ADMIN_ANIMALS_EDIT}>` compila e leva o usuario para uma pagina
+ * inexistente.
+ *
+ * `encodeURIComponent` porque o `id` vem de dado, e nao de literal. Ele e um UUID
+ * hoje, mas quem escreve o caminho nao tem como garantir isso no ponto de uso.
+ */
+export function adminAnimalEditPath(id: string): string {
+  return `/admin/animais/${encodeURIComponent(id)}/editar`;
+}
 
 /**
  * Destino de `/admin`, que deixou de renderizar pagina propria e passou a
