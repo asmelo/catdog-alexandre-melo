@@ -27,6 +27,15 @@ export interface FieldShellProps {
   readonly id: string;
   readonly label: string;
   readonly required?: boolean;
+  /**
+   * Oculta o rotulo VISUALMENTE, mantendo-o na arvore de acessibilidade.
+   *
+   * Existe para o campo cujo rotulo visivel ja e dado por outro elemento — o
+   * cabecalho de uma coluna de tabela, por exemplo. Sem ele, a alternativa seria
+   * omitir o `<label>`, e ai o controle ficaria anunciado apenas como
+   * "caixa de combinação", sem dizer a que linha pertence.
+   */
+  readonly labelHidden?: boolean;
   readonly error?: string;
   /** Texto auxiliar sob o controle (contador de caracteres, por exemplo). */
   readonly hint?: ReactNode;
@@ -56,6 +65,7 @@ export function FieldShell({
   id,
   label,
   required,
+  labelHidden,
   error,
   hint,
   children,
@@ -81,7 +91,11 @@ export function FieldShell({
     <div>
       <label
         htmlFor={id}
-        className="mb-1.5 block text-[0.8rem] font-extrabold text-ink"
+        className={
+          labelHidden === true
+            ? 'sr-only'
+            : 'mb-1.5 block text-[0.8rem] font-extrabold text-ink'
+        }
       >
         {label}
         {required === true && (

@@ -109,3 +109,55 @@ Entrega `/admin/animais` com as sete colunas da captura, a alteração de status
 
 - **Requires**: TASK-FRONTEND-013 (API, tipos, rótulos, rotas), TASK-FRONTEND-014 (`SelectField`), FEATURE-001 do MODULE-002 (navegação lateral, componente de lista, confirmação, aviso de sucesso), TASK-BACKEND-006 e TASK-BACKEND-009.
 - **Blocks**: TASK-FRONTEND-017 (as rotas do formulário são registradas aqui), TASK-FRONTEND-018.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+Suíte do frontend: **420 testes, 28 suítes, 0 falha**. `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Título "Animais", botão à direita, item ativo (CA-01, CA-02) | **Confirmado.** `aria-current="page"` no item "Animais" e ausente no de espécies |
+| Sete colunas, "Boa Esperança - ES", selo verde (CT-23, CA-03/04/05) | **Confirmado por índice de célula**, e não por texto solto — o que verifica de quebra que o valor está na coluna certa |
+| Miniatura de `position` 0; sem imagens, marcador neutro (CT-31, CT-32, CA-26) | **Confirmado.** Sem foto, **nenhuma** imagem é anunciada e a linha continua legível pelo nome |
+| Pendência de foto sem bloquear ação (CT-33, CA-46) | **Confirmado**, e o inverso também: um animal já adotado sem foto **não** exibe a pendência |
+| Contagem 0, 1, 2 (CT-24, CA-06) | **Confirmado**, mais o caso do total geral (45) com página de 20 |
+| Nenhum controle de paginação no DOM quando tudo cabe (CT-27, CA-07) | **Confirmado.** É `null`, e não desabilitado: controles desabilitados continuariam na ordem de tabulação |
+| 45 animais em três páginas, cada um uma vez (CT-26, CA-08) | **Confirmado** com um `Set` acumulado nas três páginas: 45 nomes distintos, nenhum repetido |
+| Carregando: cabeçalho permanece visível | **Confirmado.** O indicador ocupa o lugar da tabela; título e botão continuam no DOM |
+| Falha com nova tentativa (CT-30) | **Confirmado**, e a nova tentativa refaz a consulta com sucesso |
+| Alterar para "Adotado" (CT-69, CA-30) | **Confirmado.** Envia `updatedAt` da linha carregada, avisa o sucesso e o selo passa a "Adotado" |
+| Mesmo status não envia requisição (CT-71) | **Confirmado por ausência de chamada ao dublê** |
+| Falha reverte o campo (CT-74) | **Confirmado.** Campo volta a `disponivel` e exibe a frase da feature |
+| `ANIMAL_NOT_FOUND` recarrega a lista (CT-73) | **Confirmado.** A linha fantasma some |
+| Exclusão: confirmar, cancelar, `ANIMAL_NOT_FOUND` (CT-76, CT-77, CT-78, CA-33) | **Confirmado**, com o texto literal e as aspas curvas |
+| `cliente` e anônimo barrados nas três rotas (CT-87, CT-88, CA-41) | **Confirmado.** Seis casos (3 rotas × 2 situações), afirmando a **ausência** do conteúdo administrativo no DOM |
+| Teclado alcança e aciona tudo (CT-94, CA-42) | **Confirmado**: status → editar → excluir por `tab`, e `Enter` abre a confirmação |
+| Leitor de tela identifica ação e animal (CT-95) | **Confirmado**: "Editar Theo", "Excluir Theo", "Alterar status de Theo" |
+
+### Decisões de implementação
+
+**1. `<table>` de verdade, e o `DataList` NÃO foi usado.** A task manda reaproveitar os três componentes da FEATURE-001 e não criar componente de lista — e dois dos três (`ConfirmDialog`, `StatusMessage`) foram reaproveitados como está. O `DataList` ficou de fora, e o motivo está escrito no comentário dele: ele é `<ul>`/`<li>` **porque a lista de espécies tem um dado por linha**, e uma tabela de uma coluna acrescentaria semântica de grade inexistente. Esta lista tem sete colunas com cabeçalho, e a relação entre "Boa Esperança - ES" e o cabeçalho LOCALIZAÇÃO é exatamente o que a semântica de tabela carrega — sem ela, quem usa leitor de tela ouve sete valores soltos por linha e precisa decorar a ordem. Nenhum componente reutilizável de tabela foi criado: a tabela vive na tela, como a task pede.
+
+**2. `AnimalsTable` e `AnimalDeleteDialog` como arquivos próprios**, além dos cinco previstos. A tabela sairia com mais de 100 linhas dentro da página, que já carrega quatro estados, paginação, exclusão e o aviso de resultado; e o diálogo repete o mesmo padrão de casca fina que a FEATURE-001 estabeleceu em `delete-species-dialog.tsx`. Nenhum dos dois é reutilizável fora desta tela — ficam sob `pages/admin/animais/`, e não em `components/ui/`.
+
+**3. `labelHidden` acrescentado ao `SelectField` e ao `FieldShell`.** O campo da coluna ALTERAR STATUS já tem rótulo visível — o cabeçalho da coluna —, mas sem `<label>` próprio ele é anunciado apenas como "caixa de combinação", sem dizer de qual animal. A alternativa seria omitir o rótulo, que é pior. É uma prop nova numa primitiva da TASK-FRONTEND-014, e não uma alteração de comportamento existente.
+
+**4. Reversão comparada contra o valor EXIBIDO, não contra `animal.status`.** Durante uma alteração otimista os dois divergem, e comparar com o do servidor faria a segunda escolha do mesmo valor disparar uma segunda escrita — furando o CT-71 exatamente no caso em que ele importa.
+
+**5. Recuo de página ao esvaziar a última.** Excluir o último item da página 3 deixaria o administrador olhando uma tabela vazia com o total cheio no rodapé — um estado que parece defeito. O recuo é decidido sobre o total **depois** da exclusão, por isso a contagem entra como parâmetro: ler o estado ali traria o valor de antes.
+
+**6. Selo com a escala padrão do Tailwind, e não com tokens da marca.** Verde e vermelho não existiam no design system. Roxo e laranja ficaram deliberadamente de fora: eles já significam "ação primária" e "perigo/erro" em toda a base, e reusá-los para situação do animal criaria duas leituras para a mesma cor. Os quatro pares foram medidos e vão de 7.53:1 a 9.63:1, bem acima dos 4.5:1 do WCAG AA.
+
+**7. Marcador `AnimalFormPlaceholder` é um componente, e não `element={null}`.** Com `null` a rota casa e não renderiza nada, e o defeito apareceria como "a tela de cadastro abriu em branco", sem pista.
+
+### Observação de escopo, não corrigida
+
+`ADMIN_DEFAULT_PATH` continua apontando para `/admin/especies`, e o comentário dele ("aponta para as espécies **enquanto a feature de animais não existir**") ficou desatualizado. Mudá-lo é decisão de produto — qual área o `/admin` abre por padrão —, nenhum critério de aceite desta task a exige, e `route-paths.ts` não está na tabela de arquivos. Fica registrado para o fechamento da feature. O teste CT-39, que fixa a constante em `/admin/especies`, muda junto quando a decisão for tomada.
+
+### Arquivo de teste escrito aqui
+
+`animais-list-page.spec.tsx` consta da TASK-FRONTEND-018. Foi escrito nesta task pelo mesmo motivo da 015: os dezessete critérios de aceite são comportamentais e não haveria como aprová-la sem eles. As guardas de rota entraram como extensão de `app-routes.spec.tsx`, também prevista na 018. A 018 segue com os arquivos restantes.

@@ -226,6 +226,8 @@ export const MESSAGES = {
      */
     EDIT_ACTION: 'Editar',
     DELETE_ACTION: 'Excluir',
+    /** Verbo do rótulo oculto do campo da coluna ALTERAR STATUS. */
+    CHANGE_STATUS_ACTION: 'Alterar status de',
     /** Nome da regiao da `<ul>` do `DataList`, anunciado ao entrar na lista. */
     LIST_LABEL: 'Espécies cadastradas',
     CREATE_SUCCESS: 'Espécie criada com sucesso.',
@@ -281,6 +283,8 @@ export const MESSAGES = {
     CANCEL_BUTTON: 'Cancelar',
     EDIT_ACTION: 'Editar',
     DELETE_ACTION: 'Excluir',
+    /** Verbo do rótulo oculto do campo da coluna ALTERAR STATUS. */
+    CHANGE_STATUS_ACTION: 'Alterar status de',
     /** Nome da regiao da lista, anunciado ao entrar nela. */
     LIST_LABEL: 'Animais cadastrados',
     LOADING_LABEL: 'Carregando animais…',
@@ -306,6 +310,28 @@ export const MESSAGES = {
      * (RN-21).
      */
     AGE_UNKNOWN: 'Idade não informada',
+
+    /**
+     * Indicador da linha quando o animal está DISPONÍVEL e não tem foto (RN-60,
+     * CT-33, CA-46). É sinalização, e o texto diz isso: nenhuma ação é bloqueada.
+     */
+    PHOTO_PENDING: 'Sem foto cadastrada',
+
+    /** Texto alternativo da miniatura. Identifica o animal, não o arquivo. */
+    thumbnailAlt(nome: string): string {
+      return `Foto de ${nome}`;
+    },
+
+    /**
+     * Nome acessível das ações da linha. O texto VISÍVEL do botão é só o verbo
+     * ("Editar"), e o nome acessível o repete antes do nome do animal: cinco
+     * botões "Excluir" idênticos são inúteis para quem navega por lista de
+     * controles (RNF-17, CT-95), e manter o verbo no início preserva a regra de
+     * "rótulo no nome" do WCAG 2.5.3 para comando por voz.
+     */
+    rowActionLabel(acao: string, nome: string): string {
+      return `${acao} ${nome}`;
+    },
 
     IMAGES_LABEL: 'Imagens (máx. 5 — JPEG ou PNG, até 5 MB cada)',
     CHOOSE_FILES: 'Escolher arquivos',

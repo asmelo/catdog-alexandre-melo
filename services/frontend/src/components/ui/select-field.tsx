@@ -11,6 +11,8 @@ type SelectFieldProps = {
   readonly id: string;
   readonly label: string;
   readonly options: ReadonlyArray<SelectOption>;
+  /** Oculta o rotulo visualmente, mantendo-o para o leitor de tela. */
+  readonly labelHidden?: boolean;
   readonly error?: string;
   /**
    * Texto da opcao vazia. E o que permite o estado "nada escolhido" e o que faz o
@@ -44,6 +46,7 @@ export function SelectField({
   id,
   label,
   options,
+  labelHidden,
   error,
   placeholder,
   required,
@@ -52,7 +55,13 @@ export function SelectField({
   ...rest
 }: SelectFieldProps): ReactElement {
   return (
-    <FieldShell id={id} label={label} error={error} {...(required === true ? { required } : {})}>
+    <FieldShell
+      id={id}
+      label={label}
+      error={error}
+      {...(required === true ? { required } : {})}
+      {...(labelHidden === true ? { labelHidden } : {})}
+    >
       {({ atributosDeErro, temErro }) => (
         <select
           id={id}

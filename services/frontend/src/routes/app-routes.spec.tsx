@@ -9,6 +9,7 @@ import { AdminLayout } from '~/layouts/admin-layout';
 import { ClientLayout } from '~/layouts/client-layout';
 import { ADMIN_DEFAULT_PATH, ROUTE_PATHS } from '~/routes/route-paths';
 import * as authApi from '~/services/api/auth-api';
+import * as animalsApi from '~/services/api/animals-api';
 import * as speciesApi from '~/services/api/species-api';
 import { MESSAGES } from '~/utils/messages';
 
@@ -48,9 +49,16 @@ import {
  */
 jest.mock('~/services/api/auth-api');
 jest.mock('~/services/api/species-api');
+/**
+ * `animals-api` entra pelo MESMO motivo que `species-api`: a tela de animais
+ * dispara `GET /api/animals` no efeito de mount, e sem o dublê a guarda de rede
+ * lança numa microtarefa posterior ao corpo síncrono do teste (TASK-FRONTEND-016).
+ */
+jest.mock('~/services/api/animals-api');
 
 const apiDublada = jest.mocked(authApi);
 const especiesDubladas = jest.mocked(speciesApi);
+const animaisDublados = jest.mocked(animalsApi);
 
 /**
  * Os dublês do modulo automockado devolvem `undefined`, e a tela de confirmacao
@@ -76,6 +84,8 @@ beforeEach(() => {
    * lista, que e objeto de `species-page.spec.tsx`.
    */
   especiesDubladas.listSpecies.mockReturnValue(new Promise(() => undefined));
+  // Retida em voo pela mesma razão medida acima, e registrada no comentário dela.
+  animaisDublados.listAnimals.mockReturnValue(new Promise(() => undefined));
   apiDublada.confirmEmail.mockResolvedValue({ message: 'Conta confirmada! Faça login para continuar.' });
   apiDublada.resendConfirmation.mockResolvedValue({ message: 'Novo link enviado.' });
 });
@@ -592,5 +602,82 @@ describe('AppRoutes — rota de especies e redirecionamento de /admin', () => {
     // A guarda decide ANTES de qualquer filho montar: nenhuma requisicao de dado
     // administrativo parte de uma sessao que nao existe.
     expect(listagens).toHaveLength(0);
+  });
+});
+
+/* ------------------------------------------------------------------------- */
+/*  MODULE-002 / FEATURE-002 — as tres rotas de animais                       */
+/* ------------------------------------------------------------------------- */
+
+describe('AppRoutes — rotas de animais', () => {
+  it('CA-01: o admin em /admin/animais encontra a tela, dentro do layout administrativo', () => {
+    // Arrange
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_ANIMALS);
+
+    // Assert
+    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_ANIMALS);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Animais');
+    expect(screen.getByText(MARCADOR_DE_ADMIN)).toBeInTheDocument();
+    expect(screen.queryByText('Página não encontrada')).toBeNull();
+  });
+
+  it('CA-01: dentro da tela, o item "Animais" da navegação está marcado como atual', () => {
+    // Arrange
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_ANIMALS);
+
+    // Act
+    const navegacao = screen.getByRole('navigation', { name: 'Navegação administrativa' });
+    const itens = within(navegacao).getAllByRole('link');
+
+    // Assert — a navegação lateral NÃO foi alterada por esta feature; o que mudou
+    // é que o item que já apontava para cá agora tem destino.
+    expect(itens[0]).toHaveAttribute('aria-current', 'page');
+    expect(itens[1]).not.toHaveAttribute('aria-current');
+  });
+
+  it.each([
+    { nome: 'listagem', rota: ROUTE_PATHS.ADMIN_ANIMALS },
+    { nome: 'cadastro', rota: ROUTE_PATHS.ADMIN_ANIMALS_NEW },
+    { nome: 'edição', rota: '/admin/animais/a1/editar' },
+  ])(
+    'CT-88/CA-41: a rota de $nome sem sessão redireciona ao login e NÃO renderiza conteúdo administrativo',
+    ({ rota }: { readonly rota: string }) => {
+      // Arrange
+      renderizar(ANONIMO, rota);
+
+      // Assert
+      expect(rotaAtual()).toBe(ROUTE_PATHS.LOGIN);
+      expect(screen.queryByText(MARCADOR_DE_ADMIN)).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Animais' })).toBeNull();
+    },
+  );
+
+  it.each([
+    { nome: 'listagem', rota: ROUTE_PATHS.ADMIN_ANIMALS },
+    { nome: 'cadastro', rota: ROUTE_PATHS.ADMIN_ANIMALS_NEW },
+    { nome: 'edição', rota: '/admin/animais/a1/editar' },
+  ])(
+    'CT-87/CA-41: a rota de $nome com sessão `cliente` vai para a área do cliente, sem conteúdo administrativo no DOM',
+    ({ rota }: { readonly rota: string }) => {
+      // Arrange
+      renderizar(AUTENTICADO_CLIENTE, rota);
+
+      // Assert — o critério é sobre a AUSÊNCIA no DOM, e não sobre estar
+      // escondido: um conteúdo administrativo renderizado e coberto por CSS já
+      // vazou para o cliente.
+      expect(rotaAtual()).toBe(ROUTE_PATHS.CLIENT_HOME);
+      expect(screen.queryByText(MARCADOR_DE_ADMIN)).toBeNull();
+      expect(screen.queryByRole('heading', { name: 'Animais' })).toBeNull();
+      expect(screen.queryByRole('table')).toBeNull();
+    },
+  );
+
+  it('as três rotas de animais NÃO caem no catch-all de /admin/*', () => {
+    // Arrange & Act — o catch-all é `/admin/*` e casaria as três também; quem
+    // decide é a especificidade do roteador.
+    renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_ANIMALS_NEW);
+
+    // Assert
+    expect(screen.queryByText('Página não encontrada')).toBeNull();
   });
 });
