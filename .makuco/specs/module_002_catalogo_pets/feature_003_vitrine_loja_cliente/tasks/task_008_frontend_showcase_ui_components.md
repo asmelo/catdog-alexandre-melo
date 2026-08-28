@@ -144,7 +144,7 @@ A base de componentes do projeto tem sete peças, todas de formulário de autent
 
 **Status**: APROVADO
 
-**573 testes, 38 suítes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos, sem `any`. Três dependências de execução, as mesmas.
+**577 testes, 38 suítes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos, sem `any`. Três dependências de execução, as mesmas.
 
 | Critério de aceite | Resultado |
 |---|---|
