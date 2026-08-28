@@ -129,20 +129,43 @@ export interface ResumoDaCargaGeografica {
  * `JSON.parse` devolve `any`; o `parse` do Zod e o que converte esse `any` em um
  * tipo conhecido sem `as` e sem `any` vazando para o resto do modulo.
  */
+function recorteInvalido(detalhes: string): Error {
+  return new Error(
+    `Recorte de estados e municipios invalido (${CAMINHO_DO_RECORTE}). ` +
+      `Nenhum registro foi criado ou alterado:\n${detalhes}`,
+  );
+}
+
+/**
+ * `JSON.parse` fica DENTRO da guarda, e nao em cima dela.
+ *
+ * Um arquivo com uma virgula sobrando e o defeito mais provavel de um recorte
+ * editado a mao, e sem este `catch` ele escapava como `SyntaxError` cru — sem
+ * dizer QUAL arquivo esta quebrado e sem a garantia explicita de que nada foi
+ * gravado, que e justamente o que a mensagem existe para prometer. Detectado
+ * pela TASK-BACKEND-011.
+ */
+function decodificar(conteudo: string): unknown {
+  try {
+    return JSON.parse(conteudo);
+  } catch (motivo: unknown) {
+    throw recorteInvalido(
+      `  - (raiz): nao e um JSON valido: ${motivo instanceof Error ? motivo.message : String(motivo)}`,
+    );
+  }
+}
+
 function lerRecorte(): readonly EstadoDoRecorte[] {
   const conteudo = readFileSync(CAMINHO_DO_RECORTE, 'utf-8');
 
-  const resultado = recorteSchema.safeParse(JSON.parse(conteudo));
+  const resultado = recorteSchema.safeParse(decodificar(conteudo));
 
   if (!resultado.success) {
     const detalhes = resultado.error.issues
       .map((problema) => `  - ${problema.path.join('.') || '(raiz)'}: ${problema.message}`)
       .join('\n');
 
-    throw new Error(
-      `Recorte de estados e municipios invalido (${CAMINHO_DO_RECORTE}). ` +
-        `Nenhum registro foi criado ou alterado:\n${detalhes}`,
-    );
+    throw recorteInvalido(detalhes);
   }
 
   return resultado.data.states;
@@ -345,7 +368,24 @@ export async function seedGeography(prisma: PrismaClient): Promise<ResumoDaCarga
 /**
  * Execucao direta (`npm run db:seed:geography`). O guarda garante que este bloco
  * NAO roda quando `prisma/seed.ts` importa o modulo.
+ *
+ * FORA DA METRICA DE COBERTURA, pela MESMA razao ja registrada no `jest.config.ts`
+ * para o `src/index.ts`: e o ponto de entrada do PROCESSO, e nao ha o que
+ * exercitar nele sem executar o processo de verdade. Sob Jest o modulo e sempre
+ * importado, entao `require.main === module` e sempre falso e o bloco inteiro —
+ * o `if`, o `then` e o `catch` — fica permanentemente descoberto, puxando para
+ * baixo a metrica de um arquivo cuja LOGICA (validacao do recorte, loteamento,
+ * serializacao das escritas e idempotencia) esta coberta por
+ * `tests/unit/geography.seed.spec.ts`.
+ *
+ * A alternativa seria executa-lo em subprocesso, o que abriria conexao com o
+ * Postgres — proibido pela TASK-BACKEND-011, que exige que a suite passe com a
+ * rede desligada.
+ *
+ * A anotacao vale SO para este bloco: `seedGeography`, logo acima, continua
+ * dentro da metrica.
  */
+/* istanbul ignore next -- ponto de entrada de processo; ver comentario acima */
 if (require.main === module) {
   void seedGeography(prismaCompartilhado)
     .then((resumo) => {

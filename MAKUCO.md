@@ -1,6 +1,6 @@
 # MAKUCO.md
 
-This file provides guidance for Makuco agents. Project is in pre-implementation stage — services/backend and services/frontend exist but are empty.
+This file provides guidance for Makuco agents. MODULE-001 (authentication) is delivered end to end. MODULE-002 (pet catalog) has FEATURE-001 (species) delivered end to end and FEATURE-002 (animals) delivered on the backend; its frontend and FEATURE-003 (public showcase) are the work in progress. MODULES 003 and 004 (orders and their status flow) are not specified yet.
 
 ## What is CatDog?
 
@@ -44,3 +44,7 @@ Identity: purple (`#7c3aed`) and orange (`#e05a1e`), font Nunito, paw print back
 - Admin area: protected, `admin` role only
 - Public catalog: no authentication required
 - Detailed codebase docs: `.makuco/codebase/` (stack, architecture, concerns, conventions, integrations, structure, testing)
+- **Known technical debt: `.makuco/codebase/technical-debt.md`** — read it BEFORE modelling a foreign key or
+  accepting a rule verified only by a test double. It records paid debts (kept as history, so they are not
+  re-incurred), open ones, and debts registered in advance — notably DT-02: the Pedidos module's link to
+  `Animal` must be born `onDelete: Restrict`, never `Cascade` nor `SetNull`, and verified against real data.

@@ -1,11 +1,15 @@
 import {
   UserStatus,
+  type AnimalImage,
+  type AnimalStatus,
+  type City,
   type EmailConfirmationToken,
   type Prisma,
   type PrismaClient,
   type RefreshToken,
   type RefreshTokenRevokedReason,
   type Species,
+  type State,
   type User,
 } from '@prisma/client';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';
@@ -14,10 +18,18 @@ import type { CreateEmailConfirmationTokenInput } from '~/domains/auth/repositor
 import type { CreateRefreshTokenInput } from '~/domains/auth/repositories/refresh-token.repository';
 import type { CreateUserInput } from '~/domains/auth/repositories/user.repository';
 import type {
+  AnimalWithRelations,
+  CreateAnimalData,
+  CreateAnimalImageData,
+  UpdateAnimalData,
+} from '~/domains/animals/repositories/animal.repository';
+import type {
   CreateSpeciesData,
   RenameSpeciesData,
 } from '~/domains/species/repositories/species.repository';
 
+import { ArmazemDeAnimais } from './in-memory-animal.repository';
+import { ArmazemDeGeografia } from './in-memory-geography.repository';
 import {
   ArmazemDeEspecies,
   erroDeRegistroAusente,
@@ -58,12 +70,16 @@ export const armazemDeUsuarios = new ArmazemDeUsuarios();
 export const armazemDeTokensDeConfirmacao = new ArmazemDeTokensDeConfirmacao();
 export const armazemDeRefreshTokens = new ArmazemDeRefreshTokens();
 export const armazemDeEspecies = new ArmazemDeEspecies();
+export const armazemDeGeografia = new ArmazemDeGeografia();
+export const armazemDeAnimais = new ArmazemDeAnimais(armazemDeEspecies, armazemDeGeografia);
 
 const ARMAZENS: ReadonlyArray<Restauravel> = [
   armazemDeUsuarios,
   armazemDeTokensDeConfirmacao,
   armazemDeRefreshTokens,
   armazemDeEspecies,
+  armazemDeGeografia,
+  armazemDeAnimais,
 ];
 
 /**
@@ -152,6 +168,36 @@ function filtroNaoSuportado(operacao: string, where: unknown): Error {
     `Dublê de Prisma: filtro não suportado em ${operacao}: ${JSON.stringify(where)}. ` +
       'Acrescente o caso a tests/fakes/prisma-double.ts em vez de deixá-lo passar como 0 linhas.',
   );
+}
+
+
+interface ConsultaDeAnimais {
+  readonly skip: number;
+  readonly take: number;
+  readonly orderBy: ReadonlyArray<Record<string, unknown>>;
+}
+
+interface AtualizacaoDeAnimal {
+  readonly where: { readonly id: string; readonly updatedAt?: Date };
+  readonly data: UpdateAnimalData | { readonly status: AnimalStatus };
+}
+
+/**
+ * A ordenacao da listagem tem TRES criterios, e a ordem entre eles importa. O
+ * duble recusa qualquer outra em vez de aceitar e devolver linhas: uma ordenacao
+ * so por nome faria a paginacao passar nos testes e continuar nao deterministica
+ * em producao.
+ */
+const ORDENACAO_ESPERADA_DA_LISTAGEM = [
+  { nameNormalized: 'asc' },
+  { createdAt: 'desc' },
+  { id: 'asc' },
+];
+
+function exigirOrdenacaoDaListagem(orderBy: ReadonlyArray<Record<string, unknown>>): void {
+  if (JSON.stringify(orderBy) !== JSON.stringify(ORDENACAO_ESPERADA_DA_LISTAGEM)) {
+    throw filtroNaoSuportado('animal.findMany', orderBy);
+  }
 }
 
 class DubleDePrisma {
@@ -349,7 +395,162 @@ class DubleDePrisma {
    * armazens de modulo: o executor le e escreve as MESMAS linhas, entao a
    * fidelidade de comportamento e integral e so a identidade muda.
    */
-  async $transaction<T>(executar: (tx: DubleDePrisma) => Promise<T>): Promise<T> {
+  /**
+   * Delegates de `animals`, `animal_images`, `states` e `cities`
+   * (TASK-BACKEND-011).
+   *
+   * Sao eles que permitem a suite de integracao rodar o `PrismaAnimalRepository`
+   * e o `PrismaStateRepository` DE VERDADE — a consulta que sai do repositorio e
+   * interpretada aqui, e um `orderBy` ou um `where` diferente do combinado nao
+   * passa em silencio: cai em `filtroNaoSuportado`. E a mesma escolha ja feita
+   * para especie, e o motivo e o mesmo: um duble no lugar do repositorio deixaria
+   * a montagem da consulta sem nenhum teste.
+   */
+  readonly animal = {
+    findMany: (argumentos: ConsultaDeAnimais): Promise<AnimalWithRelations[]> =>
+      comoPromessa(() => {
+        exigirOrdenacaoDaListagem(argumentos.orderBy);
+
+        return [
+          ...armazemDeAnimais.listarPaginado({
+            skip: argumentos.skip,
+            take: argumentos.take,
+          }).items,
+        ];
+      }),
+
+    count: (): Promise<number> => comoPromessa(() => armazemDeAnimais.linhas.length),
+
+    findUnique: (argumentos: {
+      readonly where: { readonly id: string };
+    }): Promise<AnimalWithRelations | null> =>
+      comoPromessa(() => armazemDeAnimais.buscarPorId(argumentos.where.id)),
+
+    create: (argumentos: {
+      readonly data: CreateAnimalData;
+    }): Promise<AnimalWithRelations> =>
+      comoPromessa(() => armazemDeAnimais.criar(argumentos.data)),
+
+    updateMany: (argumentos: AtualizacaoDeAnimal): Promise<Contagem> =>
+      comoPromessa(() => {
+        const { id, updatedAt } = argumentos.where;
+
+        if (updatedAt === undefined) {
+          throw filtroNaoSuportado('animal.updateMany', argumentos.where);
+        }
+
+        if ('status' in argumentos.data) {
+          return {
+            count: armazemDeAnimais.atualizarStatusSeInalterado(
+              id,
+              updatedAt,
+              argumentos.data.status,
+            ),
+          };
+        }
+
+        return {
+          count: armazemDeAnimais.atualizarSeInalterado(id, updatedAt, argumentos.data),
+        };
+      }),
+
+    deleteMany: (argumentos: {
+      readonly where: { readonly id: string };
+    }): Promise<Contagem> =>
+      comoPromessa(() => ({ count: armazemDeAnimais.removerPorId(argumentos.where.id) })),
+  };
+
+  readonly animalImage = {
+    createManyAndReturn: (argumentos: {
+      readonly data: ReadonlyArray<CreateAnimalImageData & { readonly animalId: string }>;
+    }): Promise<AnimalImage[]> =>
+      comoPromessa(() => {
+        const primeira = argumentos.data[0];
+
+        if (primeira === undefined) {
+          return [];
+        }
+
+        return [...armazemDeAnimais.criarImagens(primeira.animalId, argumentos.data)];
+      }),
+
+    deleteMany: (argumentos: {
+      readonly where: { readonly id: { readonly in: ReadonlyArray<string> } };
+    }): Promise<Contagem> =>
+      comoPromessa(() => ({
+        count: armazemDeAnimais.removerImagensPorIds(argumentos.where.id.in),
+      })),
+
+    update: (argumentos: {
+      readonly where: { readonly id: string };
+      readonly data: { readonly position: number };
+    }): Promise<void> =>
+      comoPromessa(() => {
+        armazemDeAnimais.atualizarPosicaoDaImagem(
+          argumentos.where.id,
+          argumentos.data.position,
+        );
+      }),
+  };
+
+  readonly state = {
+    findMany: (argumentos: { readonly orderBy: { readonly uf: 'asc' | 'desc' } }): Promise<
+      State[]
+    > =>
+      comoPromessa(() => {
+        if (argumentos.orderBy.uf !== 'asc') {
+          throw filtroNaoSuportado('state.findMany', argumentos.orderBy);
+        }
+
+        return armazemDeGeografia.listarEstados();
+      }),
+
+    findUnique: (argumentos: {
+      readonly where: { readonly uf: string };
+    }): Promise<State | null> =>
+      comoPromessa(() => armazemDeGeografia.buscarEstadoPorUf(argumentos.where.uf)),
+  };
+
+  readonly city = {
+    findMany: (argumentos: {
+      readonly where: { readonly stateId: string };
+      readonly orderBy: { readonly name: 'asc' | 'desc' };
+    }): Promise<City[]> =>
+      comoPromessa(() => {
+        if (argumentos.orderBy.name !== 'asc') {
+          throw filtroNaoSuportado('city.findMany', argumentos.orderBy);
+        }
+
+        return armazemDeGeografia.listarCidadesDoEstado(argumentos.where.stateId);
+      }),
+
+    findUnique: (argumentos: {
+      readonly where: { readonly id: string };
+    }): Promise<City | null> =>
+      comoPromessa(() => armazemDeGeografia.buscarCidadePorId(argumentos.where.id)),
+  };
+
+  /**
+   * As DUAS formas de `$transaction` do Prisma, porque as duas sao usadas:
+   * a interativa (callback) pelas escritas de animal, e a de LOTE (array de
+   * promessas) pelo `listPaginated`, que emite a busca e a contagem juntas para
+   * que o total nao discorde da pagina.
+   */
+  async $transaction<T>(executar: (tx: DubleDePrisma) => Promise<T>): Promise<T>;
+  async $transaction<T>(lote: ReadonlyArray<Promise<T>>): Promise<T[]>;
+  async $transaction<T>(
+    executarOuLote: ((tx: DubleDePrisma) => Promise<T>) | ReadonlyArray<Promise<T>>,
+  ): Promise<T | T[]> {
+    if (typeof executarOuLote === 'function') {
+      return this.executarTransacaoInterativa(executarOuLote);
+    }
+
+    return Promise.all(executarOuLote);
+  }
+
+  private async executarTransacaoInterativa<T>(
+    executar: (tx: DubleDePrisma) => Promise<T>,
+  ): Promise<T> {
     const executorDaTransacao = new DubleDePrisma();
 
     return executarComRollback(ARMAZENS, async () => executar(executorDaTransacao));
@@ -364,6 +565,8 @@ export function reiniciarPrismaDouble(): void {
   armazemDeTokensDeConfirmacao.limpar();
   armazemDeRefreshTokens.limpar();
   armazemDeEspecies.limpar();
+  armazemDeGeografia.limpar();
+  armazemDeAnimais.limpar();
   /**
    * O gancho de `P2003` tambem e zerado: sem isto, uma especie marcada como
    * vinculada em um teste faria o teste seguinte que reaproveitasse o mesmo id

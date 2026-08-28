@@ -53,6 +53,13 @@ const config: Config = {
 
   collectCoverageFrom: [
     'src/**/*.ts',
+    /**
+     * A carga inicial de estados e municipios NAO vive em `src/`, e por isso
+     * ficava fora da metrica — apesar de ser codigo de producao, executado em toda
+     * implantacao, e de a sua regra mais importante (a serializacao das escritas)
+     * so ser detectavel por teste. Incluida pela TASK-BACKEND-011.
+     */
+    'prisma/seeds/**/*.ts',
     // Unico ponto que abre socket HTTP (`listen`): nao ha o que exercitar sem
     // subir um servidor de verdade, e a montagem do Express que importa esta em
     // `app.ts`, que fica coberto.

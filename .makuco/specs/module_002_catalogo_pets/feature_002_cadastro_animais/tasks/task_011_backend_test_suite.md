@@ -103,3 +103,49 @@ Fecha o critério de qualidade no lado servidor: 80% de cobertura nas classes al
 
 - **Requires**: TASK-BACKEND-005 a TASK-BACKEND-009 (tudo o que é testado), TASK-BACKEND-004 (`FakeImageStorage`), TASK-BACKEND-003 (`detectImageMimeType`).
 - **Blocks**: nenhuma task. Fecha o critério de qualidade do backend.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+### Medições
+
+| Critério de aceite | Resultado |
+|---|---|
+| `npm test` verde | **579 testes, 30 suítes, 0 falha.** Também verde sob `--runInBand --randomize`, o que prova independência de ordem |
+| 80% nos arquivos criados/alterados pela feature | **Atingido em todos.** Global: 98,85% stmts / 93,33% branches / 99,73% funcs / 98,83% lines |
+| Suíte passa com a rede desligada | **Confirmado.** Nenhum teste fala com Supabase (o armazenamento é sempre `FakeImageStorage`) nem com SMTP (`FakeMailer`). O único socket é o loopback efêmero que o supertest abre contra o `app` em memória, como já acontecia na suíte de autenticação |
+| Todo CT de backend citado por ao menos um `it` | **Confirmado por varredura.** Os 65 CT da lista do AC têm ocorrência; nenhum faltando |
+| CT-55 afirma as DUAS coisas | **Confirmado.** `failUploadOnNthCall(3)` com cinco imagens: nenhum animal no repositório **e** `FakeImageStorage` vazio |
+| 401 e 403 para cada endpoint | **Confirmado.** Seis endpoints de animal × 2 casos (`it.each` sobre `ENDPOINTS`) e dois de geografia × 2 |
+| Suítes de autenticação e espécies continuam verdes | **Confirmado**, sem alteração nelas |
+
+### Lacunas fechadas nesta rodada
+
+O trabalho herdado já cobria os CT da spec, mas quatro arquivos da feature ficavam abaixo de 80% **em branches** — ramos reais sem nenhum teste. Fechados assim:
+
+| Arquivo | Ramo descoberto | Como foi coberto |
+|---|---|---|
+| `animals.controller.ts` (br 50% → 100%) | `imagensEnviadas` com `req.files` fora do formato de array | **`src/domains/animals/animals.controller.spec.ts`** (novo). Não é alcançável por HTTP — o multer com `.array()` sempre deixa um array —, mas o ramo existe para a união de tipos do `@types/multer` e é o que separa "cadastro sem imagem" de um `TypeError` no dia em que a montagem mudar |
+| `animal.repository.ts` (br 75% → 100%) | `listPaginated` com `lote === null`, isto é, dentro de transação já aberta | **`tests/unit/animal.repository.spec.ts`** (novo). Nenhum service chama a listagem dentro de transação hoje; o ramo é do repositório devolvido por `withTransaction` e provavelmente será exercido pela feature de vitrine |
+| `animal.repository.ts` (stmts 86% → 100%) | `deleteImagesByIds` com lista **não** vazia e `updateImagePosition` | Caso novo de integração no `PATCH`: cadastra três imagens e edita com `keepImageIds` invertido e reduzido. A edição que só troca texto não passa por nenhum dos dois |
+| `geography.controller.ts` (br 0% → 100%) | `createGeographyController(dependencias)` | Caso novo no fim de `geography-routes.spec.ts`, espelhando o "ramo de produção" que a suíte de animais já tinha |
+| `geography.seed.ts` (br 64,7% → 100%) | UF repetida no recorte; estado ausente no mapa `uf → id` | Dois casos novos em `geography.seed.spec.ts`. O segundo simula o banco que devolve menos do que acabou de aceitar, espionando a **segunda** chamada de `state.findMany` |
+
+### Única alteração fora de teste
+
+`prisma/seeds/geography.seed.ts` recebeu **um comentário** `/* istanbul ignore next */` sobre o bloco `if (require.main === module)` — o ponto de entrada de processo do `npm run db:seed:geography`. Nenhuma linha de comportamento foi tocada.
+
+Razão, e é a mesma que o `jest.config.ts` já registra para excluir o `src/index.ts`: sob Jest o módulo é sempre importado, então o guarda é sempre falso e o bloco inteiro (o `if`, o `then` e o `catch`) fica permanentemente descoberto. Executá-lo exigiria subprocesso com conexão ao Postgres, o que o próprio AC #2 desta task proíbe. A anotação vale só para esse bloco: `seedGeography` e todo o resto do arquivo continuam dentro da métrica — e é por isso que o arquivo saiu de 64,7% para 100% em branches sem perder nada do que importa.
+
+### Fora do escopo desta task (registrado, não corrigido)
+
+Três arquivos seguem abaixo de 80% em branches, todos do **MODULE-001** e **não** tocados por esta feature — portanto fora do AC, que fala em "arquivos criados ou alterados por esta feature":
+
+- `src/config/env.ts` (br 66,66%) — o ramo é o `|| '(raiz)'` da linha 97, de `git blame` na TASK-BACKEND-001. A TASK-BACKEND-004 só acrescentou chaves `SUPABASE_*`, que estão cobertas
+- `src/domains/auth/tokens/access-token.service.ts` (br 75%)
+- `src/middlewares/authenticate.middleware.ts` (br 50%)
+
+Vale abrir uma task de dívida para os três se o Quality Gate do Sonar vier a exigir por arquivo.

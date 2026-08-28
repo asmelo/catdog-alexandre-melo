@@ -112,3 +112,13 @@ export class FakeImageStorage implements ImageStoragePort {
     });
   }
 }
+
+/**
+ * Instancia COMPARTILHADA usada pela suite de integracao de animais.
+ *
+ * Vive aqui, e nao no arquivo de teste, pelo mesmo motivo do
+ * `contadorDeUsoDeEspecies`: as dependencias do controller sao montadas por uma
+ * funcao chamada durante o `require` do `~/app`, e um `const` declarado no
+ * arquivo de teste ainda estaria na zona morta temporal nesse instante.
+ */
+export const armazenamentoDeAnimais = new FakeImageStorage();
