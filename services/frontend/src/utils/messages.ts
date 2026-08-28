@@ -473,6 +473,12 @@ export const MESSAGES = {
     FILTER_ANY_SIZE: 'Todos os portes',
     FILTER_ANY_SEX: 'Todos os sexos',
     FILTER_ANY_AGE: 'Qualquer idade',
+    /**
+     * Rótulo da opção acrescentada quando o filtro do endereço não está mais na
+     * lista de opções — a tela não conhece o nome daquele registro, então diz o
+     * que sabe (RN-33, CT-53).
+     */
+    FILTER_UNLISTED: 'Filtro aplicado (fora da lista atual)',
 
     SEARCH_LABEL: 'Buscar por nome ou cidade',
     SEARCH_PLACEHOLDER: 'Buscar por nome ou cidade',
@@ -498,7 +504,9 @@ export const MESSAGES = {
     /** Sem resultado COM filtros: a saida e limpar. */
     EMPTY_FILTERED: 'Nenhum animal encontrado com os filtros aplicados.',
 
-    OPTIONS_LOAD_ERROR: 'Não foi possível carregar as opções de filtro. Tente novamente.',
+    OPTIONS_LOAD_ERROR: 'Não foi possível carregar as opções. Tente novamente.',
+    /** Recusa LOCAL do campo de idade — antes de qualquer requisição. */
+    INVALID_MAX_AGE: 'Informe uma idade entre 0 e 30 anos.',
 
     AGE_UNKNOWN: 'Idade não informada',
     AGE_UNDER_ONE_MONTH: 'Menos de 1 mês',

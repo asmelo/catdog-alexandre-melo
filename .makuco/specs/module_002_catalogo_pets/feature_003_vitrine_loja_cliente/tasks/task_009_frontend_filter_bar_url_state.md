@@ -144,3 +144,52 @@ A barra de sete controles e a tradução entre o endereço da página — **em P
 
 - **Requires**: TASK-FRONTEND-007 (tipos e chaves da API); **FEATURE-002 deste módulo** — componentes `SelectField` e `Pagination`. **Se aquela feature não os tiver entregue quando esta começar, criá-los entra no escopo desta task**, e é o principal risco de esforço do frontend desta feature; `TextField` e `FieldError` já existem (FEATURE-002 do MODULE-001).
 - **Blocks**: TASK-FRONTEND-010, TASK-FRONTEND-011.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+**634 testes, 40 suítes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos. Três dependências de execução, as mesmas.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Cada controle alcançado pelo **rótulo visível** (CT-119) | **Confirmado.** `getByLabelText` encontra os seis — ele só acha o que tem `<label>` de verdade |
+| Rótulos na ordem da captura, seguidos de "Limpar filtros" | **Confirmado** lendo os `<label>` do DOM em ordem |
+| Opções neutras nos quatro campos de seleção | **Confirmado** |
+| "Limpar filtros" no DOM, visível e desabilitado (CT-90) | **Confirmado**, e habilitado com filtro aplicado |
+| Endereço em PT-BR com os sete parâmetros (CT-81) | **Confirmado** pela ida e volta `toSearchParams` → `parse` |
+| Só o aplicado deixa parâmetro (CT-85) | **Confirmado** |
+| Endereço com filtros preenche a barra (CT-82) | **Confirmado** |
+| Endereço inteiramente estragado não lança (CT-86, CT-87) | **Confirmado.** Os cinco descartados, estado renderizável, sem tela de erro |
+| Os mesmos valores na API respondem 400 (CT-88) | **Confirmado no backend**, em `catalog-routes.spec.ts` — as duas posturas coexistem por desenho |
+| `?idadeMax=0` é aplicado (CT-59) | **Confirmado** nos três pontos: leitura, escrita e tradução |
+| UUID de espécie inexistente permanece e vira opção adicional (CT-53) | **Confirmado** nos dois níveis |
+| Mudar filtro na página 3 repõe em 1 (CT-79) | **Confirmado** para seleção **e** para busca |
+| Dez caracteres → um único callback (CT-35) | **Confirmado** |
+| Escolha em seleção → callback imediato | **Confirmado**, sem `waitFor` |
+| "Limpar filtros" devolve o endereço sem parâmetro (CT-89) | **Confirmado** |
+| Falha ao carregar opções (CT-96) | **Confirmado.** O campo afetado exibe o aviso e a barra segue utilizável |
+| Aviso permanente do filtro de idade (CT-71) | **Confirmado**, associado por `aria-describedby` |
+| Barra utilizável durante o carregamento (CT-94) | **Confirmado por construção:** nenhuma prop de `loading` chega à barra, então não há como desabilitá-la em bloco |
+| Sete controles alcançáveis por teclado, em ordem (CT-123) | **Confirmado** com sete `tab` em sequência |
+| Nenhuma dependência nova | **Confirmado** |
+
+### `SelectField` e `Pagination` estavam prontos
+
+A task declara como principal risco de esforço a possibilidade de a FEATURE-002 não ter entregue os dois componentes. **Ela entregou** — `SelectField` na TASK-FRONTEND-014 e `Pagination` na TASK-FRONTEND-016 —, e os dois foram reaproveitados sem alteração. O `labelHidden` que o `SelectField` ganhou na 016 não é usado aqui: nesta barra **todos** os rótulos são visíveis.
+
+### Notas de implementação
+
+**A reposição de `pagina` vive em um lugar só.** Espalhada por sete manipuladores, o sétimo esqueceria — e o defeito apareceria como "filtrei e a lista veio vazia", na página 3 de um conjunto de uma página.
+
+**A opção adicional para valor fora da lista não inventa nome.** A tela não conhece o nome do registro que saiu das opções, então o rótulo diz o que se sabe: "Filtro aplicado (fora da lista atual)". Deixar o campo em branco mostraria "Todas as espécies" selecionado com zero resultados — uma combinação que não faz sentido para o visitante.
+
+**O campo de idade recusa localmente sem impedir o resto.** Valor fora de 0–30 sinaliza com `FieldError`, não é enviado, e a grade mantém o último resultado válido. Campo vazio é "filtro não aplicado", e **não** erro.
+
+**Dois `useEffect` com dependência reduzida, e o motivo está no comentário.** `filters` e `onChange` mudam de identidade a cada render do pai; incluí-los nas dependências reenviaria a busca em laço. O gatilho é o valor atrasado, e só ele.
+
+### Arquivos de teste escritos aqui
+
+`showcase-filters.spec.ts` consta da TASK-FRONTEND-011; `showcase-filter-bar.spec.tsx` não consta de nenhuma. Os dois foram escritos aqui porque a tolerância a endereço estragado é a regra central desta task — a promessa de que a função **nunca lança** só vale verificada — e porque os critérios de acessibilidade dos rótulos são o desvio deliberado em relação à captura, que precisa de rede desde já.
