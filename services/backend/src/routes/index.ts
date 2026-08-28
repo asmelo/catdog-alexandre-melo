@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 
 import { animalsRoutes } from '~/domains/animals/animals.routes';
 import { authRoutes } from '~/domains/auth/auth.routes';
+import { catalogRoutes } from '~/domains/catalog/catalog.routes';
 import { geographyRoutes } from '~/domains/geography/geography.routes';
 import { speciesRoutes } from '~/domains/species/species.routes';
 import { HTTP_STATUS } from '~/shared/http/http-status';
@@ -21,3 +22,9 @@ router.use('/auth', authRoutes);
 router.use('/species', speciesRoutes);
 router.use('/states', geographyRoutes);
 router.use('/animals', animalsRoutes);
+/**
+ * A UNICA area publica do projeto. As demais montam `authenticate` e
+ * `authorizeRole`; esta atende visitante anonimo de proposito — ver o comentario
+ * no topo de `catalog.routes.ts` antes de "corrigir" a ausencia.
+ */
+router.use('/catalog', catalogRoutes);

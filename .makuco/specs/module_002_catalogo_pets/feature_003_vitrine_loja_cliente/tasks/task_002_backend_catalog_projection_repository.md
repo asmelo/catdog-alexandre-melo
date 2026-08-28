@@ -191,3 +191,13 @@ Criar um segundo módulo com a mesma lógica produziria **duas implementações 
 **`PUBLIC_ANIMAL_KEYS` exportada.** O critério de aceite pede comparação por **igualdade** de `Object.keys`. Deixar o conjunto esperado escrito no teste criaria uma segunda lista, que passaria a divergir da projeção sem que nada reprovasse — o teste continuaria verde comparando a lista antiga consigo mesma.
 
 **`PaginatedResult<T>` declarado aqui, e não importado de `list-animals.service.ts`.** É estruturalmente idêntico ao envelope da FEATURE-002 — o frontend consome o mesmo formato —, mas importar amarraria a vitrine pública ao módulo administrativo, que é o import cruzado que a separação de domínios existe para evitar.
+
+---
+
+### Correção aplicada durante a TASK-BACKEND-003 — vocabulário de `size` e `sex`
+
+A primeira entrega desta task tipou `PublicAnimal.size`/`sex` como os enums do Prisma, e a projeção saía com **`"GRANDE"`** e **`"MACHO"`**. A verificação contra o banco real, feita na task seguinte, expôs a divergência: o contrato da spec declara `"size": "grande"` e `"sex": "macho"`, minúsculos e sem acento — o **mesmo** vocabulário que o filtro recebe em `?size=grande`.
+
+Não era detalhe estético: um contrato que recebe minúsculo e devolve maiúsculo obrigaria o frontend a manter duas tabelas de tradução para o mesmo conceito, e a segunda apareceria só quando alguém tentasse casar o valor devolvido com a opção do filtro.
+
+Corrigido com `PublicSize`/`PublicSex` em `catalog.types.ts` e dois `Record` **fechados sobre o enum** no montador — acrescentar um porte ao `AnimalSize` sem acrescentar a tradução quebra a compilação. Os pares são os mesmos do `animal.mapper.ts` administrativo, declarados de novo em vez de importados, pela RN-56.

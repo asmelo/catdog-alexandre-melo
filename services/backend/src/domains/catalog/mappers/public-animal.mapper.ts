@@ -1,4 +1,11 @@
-import type { PublicAnimal, PublicAnimalRow } from '~/domains/catalog/catalog.types';
+import { AnimalSex, AnimalSize } from '@prisma/client';
+
+import type {
+  PublicAnimal,
+  PublicAnimalRow,
+  PublicSex,
+  PublicSize,
+} from '~/domains/catalog/catalog.types';
 import { buildPublicObjectUrl } from '~/infra/storage/object-path';
 import { calculateAge } from '~/utils/age';
 
@@ -32,6 +39,29 @@ import { calculateAge } from '~/utils/age';
  * contato do proprietario — acrescentado ao lado administrativo nao pode virar
  * vazamento aqui por heranca.
  */
+
+/**
+ * Traducao do vocabulario do BANCO para o do CONTRATO.
+ *
+ * `Record` FECHADO sobre o enum, e nao `toLowerCase()`: acrescentar um porte ao
+ * `AnimalSize` sem acrescentar a traducao aqui quebra a COMPILACAO. O
+ * `toLowerCase()` produziria silenciosamente um valor que o contrato nao declara
+ * e que o frontend nao sabe rotular.
+ *
+ * Sao os MESMOS pares do `animal.mapper.ts` administrativo, declarados de novo em
+ * vez de importados: o dominio publico nao importa do administrativo (RN-56), e
+ * seis linhas de literal custam menos que o acoplamento.
+ */
+const PORTE_PUBLICO: Readonly<Record<AnimalSize, PublicSize>> = {
+  [AnimalSize.PEQUENO]: 'pequeno',
+  [AnimalSize.MEDIO]: 'medio',
+  [AnimalSize.GRANDE]: 'grande',
+};
+
+const SEXO_PUBLICO: Readonly<Record<AnimalSex, PublicSex>> = {
+  [AnimalSex.MACHO]: 'macho',
+  [AnimalSex.FEMEA]: 'femea',
+};
 
 /** As chaves da projecao, na ordem em que sao escritas abaixo. */
 export const PUBLIC_ANIMAL_KEYS = [
@@ -67,8 +97,8 @@ export function toPublicAnimal(row: PublicAnimalRow, now: Date): PublicAnimal {
     id: row.id,
     name: row.name,
     species: { id: row.species.id, name: row.species.name },
-    size: row.size,
-    sex: row.sex,
+    size: PORTE_PUBLICO[row.size],
+    sex: SEXO_PUBLICO[row.sex],
     ageInYears,
     ageInMonths,
     /**

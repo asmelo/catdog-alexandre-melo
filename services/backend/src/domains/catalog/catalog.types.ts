@@ -1,6 +1,22 @@
 import type { AnimalSex, AnimalSize } from '@prisma/client';
 
 /**
+ * VOCABULARIO DO CONTRATO — minusculo e sem acento, como o `size: "grande"` da
+ * projecao publica da spec.
+ *
+ * DELIBERADAMENTE DIFERENTE do enum do Prisma (`GRANDE`, `MACHO`), que e
+ * vocabulario do BANCO. A distincao nao e cosmetica: o mesmo vocabulario que sai
+ * na resposta e o que entra no filtro (`?size=grande`), e um contrato que recebe
+ * minusculo e devolve maiusculo obrigaria o frontend a manter duas tabelas de
+ * traducao para o mesmo conceito.
+ *
+ * Os rotulos ACENTUADOS ("Grande", "Macho") sao da interface, e nem o banco nem o
+ * contrato os conhecem.
+ */
+export type PublicSize = 'pequeno' | 'medio' | 'grande';
+export type PublicSex = 'macho' | 'femea';
+
+/**
  * Tipos da VITRINE PUBLICA.
  *
  * Dominio proprio (`catalog`), e nao uma extensao de `animals`, e a separacao e o
@@ -78,8 +94,8 @@ export interface PublicAnimal {
   readonly id: string;
   readonly name: string;
   readonly species: { readonly id: string; readonly name: string };
-  readonly size: AnimalSize;
-  readonly sex: AnimalSex;
+  readonly size: PublicSize;
+  readonly sex: PublicSex;
   readonly ageInYears: number | null;
   readonly ageInMonths: number | null;
   readonly description: string | null;

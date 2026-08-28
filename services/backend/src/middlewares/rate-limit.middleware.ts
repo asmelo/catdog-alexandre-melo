@@ -186,3 +186,45 @@ export const refreshLimiter: RequestHandler = criarLimitador({
   windowMs: MINUTO_EM_MS,
   limit: 20,
 });
+
+/**
+ * VITRINE PUBLICA — 60 requisicoes por minuto por IP.
+ *
+ * ============ POR QUE ESTE ENDPOINT TEM LIMITADOR, E OS OUTROS NAO ============
+ *
+ * As FEATURE-001 e FEATURE-002 deste modulo dispensaram limitador com um
+ * argumento explicito: "os limitadores do projeto protegem endpoints de
+ * credencial contra forca bruta e contra uso do servidor como ferramenta de spam;
+ * nenhum dos dois riscos existe num CRUD administrativo autenticado".
+ *
+ * O ARGUMENTO NAO SE TRANSFERE PARA CA, e por duas razoes independentes:
+ *
+ * 1. Nao ha credencial nenhuma. E leitura ANONIMA — nao existe sessao a
+ *    autenticar, nem conta a bloquear, nem administrador a castigar. Quem abusa
+ *    e um IP qualquer da internet.
+ * 2. A busca e a consulta MAIS CARA do catalogo. `contains` casa conteudo em
+ *    QUALQUER posicao da cadeia, o que nao se beneficia de indice B-tree: cada
+ *    busca e uma varredura sobre `animals` cruzada com `cities`. Uma rota publica
+ *    que dispara varredura sem custo para quem chama e um amplificador.
+ *
+ * ============ POR QUE 60/MIN, E POR QUE ELE NAO ATRAPALHA ============
+ *
+ * A navegacao humana da vitrine — digitar na busca, trocar de filtro, paginar —
+ * produz alguns pedidos por segundo em rajada e depois silencio. Sessenta por
+ * minuto cobre isso com folga, inclusive para varios visitantes atras da MESMA
+ * saida de rede (um escritorio, uma operadora movel), que compartilham o IP
+ * (CT-109, RNF-05).
+ *
+ * ============ NENHUM MECANISMO NOVO ============
+ *
+ * Mesma fabrica, mesma `MemoryStore`, mesmo `standardHeaders: false`, mesmo
+ * desligamento por `RATE_LIMIT_ENABLED` e mesmo `TooManyRequestsError` no
+ * envelope padrao. Nenhum codigo de erro novo nasce nesta feature.
+ *
+ * Chave DEFAULT da lib — o IP ja tratado para IPv6 —, e nao `chaveDeIpComEmail`:
+ * a requisicao e `GET` e nao tem corpo de onde tirar um segundo componente.
+ */
+export const catalogLimiter: RequestHandler = criarLimitador({
+  windowMs: MINUTO_EM_MS,
+  limit: 60,
+});

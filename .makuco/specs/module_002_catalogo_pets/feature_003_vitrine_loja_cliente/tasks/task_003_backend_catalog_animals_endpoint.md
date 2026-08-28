@@ -134,3 +134,69 @@ Expõe a camada de dados da TASK-BACKEND-002 como o primeiro endpoint **anônimo
 
 - **Requires**: TASK-BACKEND-002 (porta `PublicCatalogRepository`, `toPublicAnimal`, tipos), TASK-BACKEND-001 (`normalizeForSearch`).
 - **Blocks**: TASK-BACKEND-004 (acrescenta rotas ao mesmo `Router` e controller), TASK-BACKEND-005, TASK-FRONTEND-007.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO — com um desvio de técnica, reportado abaixo
+
+`npm run typecheck` com 0 erros e 579 testes do backend verdes. Os critérios de query foram medidos **caso a caso contra o schema real**, e os de consulta **contra o banco real**, com dados de teste semeados e removidos ao fim.
+
+### Validação da query — medida, caso a caso
+
+| Entrada | Esperado | Medido |
+|---|---|---|
+| sem parâmetro | `200`, padrões | `{page:1,pageSize:12}` ✅ |
+| `?status=adotado`, `?status=disponivel`, `?status=` | `400`, `field:"status"` | os três: `status: Campo não permitido nesta requisição.` ✅ |
+| `?ordenacao=nome` | `400` | `ordenacao: Campo não permitido…` ✅ |
+| `size=gigante`, `size=`, `size=1` | `400` nos três | `size: Selecione uma opção válida.` ✅ |
+| `sex=outro` | `400` | ✅ |
+| `maxAgeYears=-1`, `=31`, `=3.5`, `=abc` | `400` nos quatro | ✅ |
+| `maxAgeYears=0`, `=30` | `200` | `{maxAgeYears:0}` e `{maxAgeYears:30}` ✅ |
+| `maxAgeYears=` vazio | filtro **não** aplicado | ausente do resultado ✅ (ver correção abaixo) |
+| `search` 120 / 121 | `200` / `400` | ✅ |
+| `search="   "` | `200`, busca não aplicada | `search` ausente ✅ |
+| `search="campo   magro"` | espaços colapsados | `"campo magro"` ✅ |
+| `search="São"` | normalizado | `"sao"` ✅ |
+| `speciesId=abc` | `400` com o campo | `speciesId: Identificador inválido.` ✅ |
+| `pageSize=0`, `=101` | `400` | ✅ |
+| `page=99` | `200` | ✅ |
+
+### Consulta — medida contra o banco real
+
+Cinco animais semeados sob uma espécie de teste (um por situação, mais um filhote sem data), consultados e depois removidos:
+
+| Verificação | Resultado |
+|---|---|
+| Só `DISPONIVEL` sai | **2 de 5** — os quatro status semeados, e apenas os disponíveis devolvidos ✅ |
+| Chaves da projeção iguais ao contrato | `true`, comparado por igualdade contra `PUBLIC_ANIMAL_KEYS` ✅ |
+| Busca sem acento acha nome acentuado | `search="jose"` → 1 (o animal "José") ✅ |
+| Busca acha pelo nome da CIDADE | `search="esperanca"` → 2 ✅ |
+| Texto inteiro, não quebrado em termos | `search="jose campo"` → **0** ✅ |
+| `maxAgeYears` exclui quem não tem data | `=1` → 0; `=10` → 1 ✅ |
+| Identificador inexistente | `total: 0`, **sem exceção** ✅ |
+| `page=99` | lista vazia, total real, sem erro ✅ |
+| Paginação | `pageSize=1`: páginas 1 e 2 com itens **distintos** ✅ |
+
+### Um defeito encontrado pela verificação, e corrigido
+
+A projeção saía com `"size": "GRANDE"` e `"sex": "MACHO"` — o enum do Prisma vazando —, enquanto o contrato da spec declara `"grande"` e `"macho"`, o **mesmo** vocabulário que o filtro recebe. Corrigido na TASK-BACKEND-002, e registrado lá.
+
+Vale o registro de método: o desvio não apareceu na leitura do código nem no `typecheck` — os dois estavam corretos quanto ao que o código dizia fazer. Apareceu ao imprimir a projeção de um animal real e compará-la com o JSON da spec.
+
+### Desvio de técnica: `objetoSemCamposExtras` em vez de `.strict()`
+
+A task prescreve `z.object({...}).strict()`. Foi usado `.passthrough()` + `superRefine`, que é o **mesmo padrão** que a TASK-BACKEND-009 da FEATURE-002 já adotou depois de medir o problema: o `.strict()` do Zod devolve `path: []`, que o `validationErrorFromZodError` transforma em `field: ""`, **e a mensagem sai em inglês**.
+
+O critério de aceite desta task exige `details[0].field = "status"` e a frase em PT-BR — o `.strict()` não os entrega. O guarda foi declarado localmente, e não importado de `animals.validators.ts`, porque o domínio público não importa do administrativo.
+
+### Outros ajustes que a verificação exigiu
+
+**Cadeia vazia tratada como ausência nos parâmetros NUMÉRICOS.** `z.coerce.number()` converte `""` em `0`, e para `maxAgeYears` isso invertia o filtro: `?maxAgeYears=` passaria a significar "só filhotes" — um formulário que envia o campo vazio ao submeter desligaria a vitrine sozinho. O `preprocess` aplica-se **só** aos numéricos: em `size` e `sex` a cadeia vazia continua sendo `400`, e a diferença é a que o próprio critério de aceite desenha (CT-45 × CT-60).
+
+**`errorMap` sozinho no `conjuntoFechado`.** O Zod **lança em tempo de construção** se ele vier junto de `required_error`/`invalid_type_error` — verificado neste projeto, Zod 3.25.76. O mapa sozinho cobre os dois casos.
+
+**O quarto genérico do `RequestHandler` ficou de fora**, e a query é lida por `queryJaValidada`. Mesma solução já adotada em `animals.controller.ts`: sob `exactOptionalPropertyTypes`, o `ParsedQs` do Express não é atribuível ao tipo de saída do schema, e fixar o genérico faz o próprio `router.get(...)` recusar o handler.
+
+**`Cache-Control: no-store`, e não `no-cache`.** O segundo apenas exige revalidação e ainda deixa a cópia no disco de um quiosque compartilhado. O dado desta tela muda por ação do administrador em outra aba, e um cache exibiria animal já adotado a novo interessado.
