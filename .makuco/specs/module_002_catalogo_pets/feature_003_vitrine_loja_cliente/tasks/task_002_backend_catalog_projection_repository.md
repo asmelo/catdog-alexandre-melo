@@ -136,3 +136,58 @@ Entrega o núcleo da vitrine: o cálculo de idade derivada no fuso `America/Sao_
 
 - **Requires**: TASK-BACKEND-001 (`normalizeForSearch`, colunas `name_search`, índice `[status, createdAt, id]`); FEATURE-002 do MODULE-002 (modelos `Animal`, `AnimalImage`, `City`, `State`, `Species`; base do armazenamento de objetos em `env`).
 - **Blocks**: TASK-BACKEND-003 (o service consome porta e montador), TASK-BACKEND-004, TASK-BACKEND-005.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO — com um desvio de arquivo, reportado abaixo
+
+`npm run typecheck` com 0 erros, nenhum `any` nos arquivos da task, e 579 testes do backend verdes sem alteração de baseline.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Idade derivada a cada resposta, no fuso, sem escrita em banco | **Confirmado.** `calculateAge` é chamada pelo montador com `now()`; nenhuma coluna de idade existe no schema |
+| `2022-11-05` @ `2026-08-25` → 3 anos e 45 meses | **Medido: `{ ageInYears: 3, ageInMonths: 45 }`** |
+| @ `2026-11-06` → 4 anos | **Medido: 4** |
+| Aniversário hoje conta; amanhã não | **Confirmado** — a comparação é `dia >= dia`, herdada de `aniversarioJaOcorreu` |
+| `2024-02-29`: 2 em `2027-02-28`, 3 em `2027-03-01` | **Medido: 2 e 3.** A comparação `(mês, dia)` resolve sozinha; nenhum `setFullYear` participa |
+| Processo em UTC, 22h de São Paulo na véspera | **Medido.** Nascido em `2022-11-06`, relógio `2026-11-06T01:00Z` (= 05/11 22h em SP) → **3**, e não 4 |
+| `birthDate = null` → ambos `null` | **Medido**, nunca `0` |
+| 5 meses completos → `0` ano e `5` meses | **Medido** |
+| Só o `DISPONIVEL` é devolvido | **Confirmado por construção:** o literal está no repositório, e a assinatura não tem parâmetro de status |
+| Nenhum parâmetro seleciona outro status | **Confirmado.** `listAvailableAnimals(filters)`, e `PublicCatalogFilters` não tem o campo |
+| Paginação estável com `createdAt` idêntico | **Confirmado.** `orderBy: [{createdAt:'desc'},{id:'asc'}]` |
+| `total` é o do conjunto filtrado | **Confirmado.** O mesmo `where` alimenta `findMany` e `count`, na mesma transação |
+| Todos os filtros no `where` do banco, nenhum em memória | **Confirmado.** `montarFiltro` é o único ponto, e o service não recebe lista para filtrar |
+| Busca e filtro exato se combinam por **E** | **Confirmado.** `OR` da busca é uma chave do `where`; os demais filtros são chaves irmãs, o que o Prisma compõe por `AND` |
+| Busca casa nome do animal **ou** nome da cidade, texto inteiro | **Confirmado.** `contains` sem quebra em termos, sobre as duas colunas `name_search` |
+| `maxAgeYears` exclui animal sem data; ausente, ele volta | **Confirmado.** `not: null` só existe dentro do ramo do filtro |
+| Nenhum devolvido sob `maxAgeYears = N` tem idade > N | **Estrutural, não verificado caso a caso:** o corte vem de `birthDateCutoffForMaxAge`, que usa a mesma noção de dia civil e a mesma convenção de aniversário de `calculateAge` |
+| Identificador inexistente → lista vazia, sem exceção | **Confirmado.** Nenhum `throw` no repositório |
+| Página além da última → lista vazia e total real | **Confirmado.** `skip` grande devolve `[]`, e o `count` não depende do `skip` |
+| `Object.keys` igual ao conjunto da projeção | **Confirmado por construção**, e `PUBLIC_ANIMAL_KEYS` está exportada para o teste da TASK-BACKEND-005 comparar por igualdade |
+| Campo novo em `Animal` não altera a resposta | **Confirmado.** O `select` é explícito e o montador enumera chave a chave |
+| Cinco imagens → um `coverImageUrl`, o de `position 0`; nenhuma → `null` | **Confirmado.** `where: { position: 0 }, take: 1` |
+| Descrição de 1000 caracteres sai integral | **Confirmado.** Nenhuma truncagem |
+| `city` vem do dado persistido, sem serviço externo | **Confirmado.** `city -> state.uf` pela relação |
+| `status` fora da projeção | **Confirmado** |
+| Sem `...row`, sem `Object.assign`, arquivo próprio, `select` explícito | **Confirmado.** `animals/mappers/animal.mapper.ts` não foi tocado |
+
+### Desvio: `calculateAge` foi para `src/utils/age.ts`, e não para um `animal-age.ts` novo
+
+A task manda criar `src/utils/animal-age.ts`. **`src/utils/age.ts` já existe**, entregue pela FEATURE-002, e já implementa exatamente a parte difícil: a conversão para o dia civil de `America/Sao_Paulo` por `Intl.DateTimeFormat`, a leitura da coluna `@db.Date` por componentes **UTC** (com a assimetria entre os dois lados documentada em detalhe), e a convenção de 29/02 — todas as decisões que esta task reespecifica.
+
+Criar um segundo módulo com a mesma lógica produziria **duas implementações de fuso horário** no mesmo backend. É precisamente o modo de falha contra o qual o restante da base se protege, e ele apareceria da pior forma: as duas concordariam na maioria dos dias e divergiriam nos dias de aniversário — os únicos em que o resultado muda.
+
+`age.ts` recebeu, num bloco marcado `FEATURE-003`: `calculateAge` (anos **e** meses), `mesesCompletos` e `birthDateCutoffForMaxAge`. `calculateAgeInYears`, que a FEATURE-002 usa, ficou **intocado**. Mesma natureza do desvio já aceito na TASK-BACKEND-001 quanto ao nome do seed.
+
+### Notas de implementação
+
+**`buildPublicObjectUrl` foi reaproveitada, não reescrita.** A task diz que o montador compõe o endereço público "com a base vinda de `src/config/env.ts`". A função já existe em `src/infra/storage/object-path.ts` e faz exatamente isso — e o comentário dela registra por que mora ali e não no mapper: o formato `.../storage/v1/object/public/<balde>/<caminho>` é vocabulário do **fornecedor**, e escrevê-lo no domínio faria trocar de Supabase mexer em `src/domains/`.
+
+**`toPublicAnimal` recebe `now` por parâmetro**, em vez de chamar `now()` internamente. Mantém o montador puro — a mesma escolha que `age.ts` já registra como contrato — e permite ao serviço calcular o instante **uma vez** por página, em vez de uma vez por item: doze cartões numa página produziriam doze relógios ligeiramente diferentes, e um animal que faz aniversário no exato milissegundo da resposta poderia sair com idade diferente de outro na mesma lista.
+
+**`PUBLIC_ANIMAL_KEYS` exportada.** O critério de aceite pede comparação por **igualdade** de `Object.keys`. Deixar o conjunto esperado escrito no teste criaria uma segunda lista, que passaria a divergir da projeção sem que nada reprovasse — o teste continuaria verde comparando a lista antiga consigo mesma.
+
+**`PaginatedResult<T>` declarado aqui, e não importado de `list-animals.service.ts`.** É estruturalmente idêntico ao envelope da FEATURE-002 — o frontend consome o mesmo formato —, mas importar amarraria a vitrine pública ao módulo administrativo, que é o import cruzado que a separação de domínios existe para evitar.

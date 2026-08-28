@@ -173,3 +173,87 @@ export function calculateAgeInYears(birthDate: Date | null, now: Date): number |
 
   return aniversarioJaOcorreu(hoje, nascimento) ? anosDecorridos : anosDecorridos - 1;
 }
+
+/* ------------------------------------------------------------------------- */
+/*  FEATURE-003 — vitrine publica                                             */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Idade em ANOS e em MESES completos.
+ *
+ * Os dois valores saem SEMPRE juntos, e a escolha entre exibir um ou outro e da
+ * TELA (RN-38): abaixo de um ano "3 meses" informa e "0 anos" nao. O servidor nao
+ * formata texto de idade — devolver uma frase pronta amarraria a API ao idioma e
+ * a redacao da interface.
+ *
+ * `null` nos DOIS quando nao ha data, e `null` continua sendo diferente de `0`
+ * (RN-39): zero e "menos de um mes de vida", nulo e "ninguem sabe".
+ */
+export interface AnimalAge {
+  readonly ageInYears: number | null;
+  readonly ageInMonths: number | null;
+}
+
+/**
+ * Meses COMPLETOS, pela mesma aritmetica de calendario dos anos.
+ *
+ * `(ano * 12 + mes)` de diferenca, decrementado quando o dia do mes corrente
+ * ainda nao alcancou o dia do nascimento. Subtrair milissegundos e dividir por
+ * 30 erraria em todo mes que nao tem 30 dias — isto e, em oito dos doze.
+ */
+function mesesCompletos(hoje: DataCivil, nascimento: DataCivil): number {
+  const mesesDecorridos = (hoje.ano - nascimento.ano) * 12 + (hoje.mes - nascimento.mes);
+
+  return hoje.dia >= nascimento.dia ? mesesDecorridos : mesesDecorridos - 1;
+}
+
+export function calculateAge(birthDate: Date | null, now: Date): AnimalAge {
+  if (birthDate === null) {
+    return { ageInYears: null, ageInMonths: null };
+  }
+
+  const nascimento = dataCivilDeColunaDate(birthDate);
+  const hoje = dataCivilNoFusoDoProduto(now);
+  const anosDecorridos = hoje.ano - nascimento.ano;
+
+  return {
+    ageInYears: aniversarioJaOcorreu(hoje, nascimento) ? anosDecorridos : anosDecorridos - 1,
+    ageInMonths: mesesCompletos(hoje, nascimento),
+  };
+}
+
+/**
+ * Data de nascimento MINIMA aceitavel para o filtro "idade ate N anos" (RN-45).
+ *
+ * O filtro da vitrine e `birthDate >= este corte`. O corte e o dia civil de hoje
+ * menos `(N + 1)` anos, MAIS UM DIA:
+ *
+ * - quem nasceu exatamente nesse dia completa `N + 1` anos amanha, entao hoje
+ *   ainda tem `N` — e entra;
+ * - quem nasceu um dia antes completou `N + 1` HOJE — e fica de fora.
+ *
+ * ============ POR QUE O CORTE SAI DAQUI, E NAO DO SERVICO ============
+ *
+ * Ele e derivado da MESMA nocao de dia civil e da MESMA convencao de aniversario
+ * que `calculateAge` usa. E isso que torna a RN-45 — "nenhum animal devolvido sob
+ * `maxAgeYears = N` tem idade maior que N" — uma consequencia ESTRUTURAL, e nao
+ * uma coincidencia que se verifica caso a caso e quebra na primeira data de
+ * fronteira. Um corte calculado em outro lugar, com outra aritmetica, concordaria
+ * com a idade exibida na maioria dos dias e discordaria exatamente nos dias de
+ * aniversario.
+ *
+ * O retorno e um `Date` em MEIA-NOITE UTC, que e a forma como o driver do Prisma
+ * materializa e compara a coluna `@db.Date` — a mesma assimetria ja registrada em
+ * `dataCivilDeColunaDate`. Construi-lo com `new Date(ano, mes, dia)` usaria o fuso
+ * do PROCESSO e deslocaria o corte em um dia.
+ */
+export function birthDateCutoffForMaxAge(maxAgeYears: number, now: Date): Date {
+  const hoje = dataCivilNoFusoDoProduto(now);
+
+  /**
+   * `Date.UTC` com o dia somado de 1: a propria funcao normaliza a virada de mes
+   * e de ano, e o faz pelo calendario — 31/12 + 1 vira 01/01 do ano seguinte, e
+   * 28/02 + 1 vira 29/02 em ano bissexto e 01/03 nos demais.
+   */
+  return new Date(Date.UTC(hoje.ano - (maxAgeYears + 1), hoje.mes - 1, hoje.dia + 1));
+}
