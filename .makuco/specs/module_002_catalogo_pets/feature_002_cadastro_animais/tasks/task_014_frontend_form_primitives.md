@@ -91,3 +91,36 @@ A base de componentes cobre hoje apenas o formulário de autenticação: campo d
 
 - **Requires**: nenhuma task desta feature.
 - **Blocks**: TASK-FRONTEND-017 (o formulário é montado com estas primitivas), TASK-FRONTEND-016 (o campo da coluna ALTERAR STATUS é um `SelectField`).
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+| Critério de aceite | Resultado |
+|---|---|
+| `SelectField`: rótulo por `htmlFor`/`id`, obrigatoriedade por texto | **Confirmado.** `getByLabelText` alcança o `<select>`; o asterisco é `aria-hidden` e quem anuncia é o `<span class="sr-only"> (obrigatório)</span>`. Verificado na TASK-FRONTEND-018 (`select-field.spec.tsx`) |
+| `SelectField` com erro: `aria-invalid` e `aria-describedby` | **Confirmado**, apontando o `id` do `FieldError`. Verificado na 018 |
+| `SelectField` desabilitado com placeholder (CT-34) | **Confirmado.** A `<option value="" disabled>` aparece e o controle não aceita escolha. Verificado na 018 |
+| `SelectField` só por teclado (RNF-16) | **Confirmado.** `tab` foca e `selectOptions` escolhe — comportamento do `<select>` nativo, que é a razão de não haver lista construída à mão. Verificado na 018 |
+| `ToggleField`: espaço chama `onChange(true)` e não guarda estado | **Confirmado.** Após o espaço, `onChange` recebe `true` e o controle continua desligado, porque a prop não mudou. Verificado na 018 |
+| `ToggleField`: estado não comunicado só por cor (RNF-17) | **Confirmado.** Três canais: posição do disco, estado nativo do input (`role="switch"` → "ligado/desligado") e rótulo associado |
+| `DateField` preserva `"2022-11-05"` em qualquer fuso | **Confirmado** em `date-field.spec.tsx`, incluindo a ida e volta por um harness controlado de verdade |
+| Contador do `TextareaField` é `aria-live="polite"` | **Confirmado** em `textarea-field.spec.tsx` |
+| Suíte de login verde sem alterar o arquivo de teste | **Confirmado.** `login-page.spec.tsx` **não foi tocado**; 350 testes verdes |
+| Dependências de execução continuam três | **Confirmado.** `react`, `react-dom`, `react-router-dom`. `package.json` sem diff |
+
+### Decisões de implementação que a task não previa
+
+**1. `field-shell.tsx`, um arquivo a mais que a tabela.** As quatro primitivas de campo repetiriam, cada uma, as mesmas quatro decisões: o `<label htmlFor>` casando com o `id`, o asterisco decorativo com texto acessível ao lado, o par `aria-invalid`/`aria-describedby` e o tratamento de `''` como ausência de erro. Quatro cópias divergem na primeira correção — e o que divergiria é justamente a parte de acessibilidade, que é a que ninguém vê quebrar. O `FieldShell` **não** substitui o `TextField`: naquele o rótulo é `sr-only` por decisão de layout do mockup de login, e aqui é visível, como a captura do formulário de animal mostra. São anatomias diferentes de propósito.
+
+**2. Estrutura do `ToggleField` corrigida durante a implementação.** A primeira montagem punha o trilho dentro de um `<label>` irmão do input. A variante `peer` do Tailwind gera um combinador de irmãos (`~`), que **não** atravessa para dentro de outro elemento — o `peer-focus-visible:shadow-focus-ring` no trilho aninhado simplesmente não teria efeito, e o controle ficaria **sem indicador de foco no teclado**. É a falha de acessibilidade mais fácil de não notar, porque no mouse tudo funciona. Corrigido envolvendo input, trilho e texto num único `<label>`: o trilho passa a ser irmão direto do input e o clique em qualquer ponto da linha continua alternando.
+
+**3. `role="switch"` sobre o checkbox nativo.** Muda o anúncio de "marcado/não marcado" para "ligado/desligado", que é o vocabulário correto para uma alternância, sem abrir mão de nada do comportamento nativo.
+
+**4. `SecondaryButton` nasce com `type="button"`.** Dentro de um `<form>` o default do HTML é `submit`, e um "Cancelar" que envia o formulário é o defeito clássico deste componente — que a TASK-FRONTEND-017 encontraria. Continua sobrescritível pelo `...rest`.
+
+**5. `value ?? ''` no `SelectField`.** Sem isso o React alterna entre controlado e não controlado quando a tela limpa a escolha, e o aviso aparece no console junto com um campo que para de responder ao estado.
+
+**6. `date-field.spec.tsx` e `textarea-field.spec.tsx` criados aqui**, e não na 018: os dois critérios que eles cobrem não aparecem na lista de arquivos daquela task, então ficariam sem verificação em lugar nenhum. Os de `SelectField` e `ToggleField` ficaram na 018, que já os previa.

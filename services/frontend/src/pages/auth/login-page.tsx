@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AlertMessage } from '~/components/ui/alert-message';
 import { AuthCard } from '~/components/ui/auth-card';
 import { PasswordField } from '~/components/ui/password-field';
+import { SecondaryButton } from '~/components/ui/secondary-button';
 import { SubmitButton } from '~/components/ui/submit-button';
 import { TextField } from '~/components/ui/text-field';
 import { useAuth } from '~/contexts/auth/use-auth';
@@ -20,14 +21,6 @@ interface Aviso {
 }
 
 const SEM_ERROS: FieldErrors = {};
-
-/**
- * Botao secundario (reenvio do e-mail de confirmacao). Contorno roxo em vez de
- * preenchido: ele nao pode competir com o "Entrar", que continua sendo a acao
- * primaria da tela.
- */
-const CLASSES_DO_BOTAO_SECUNDARIO =
-  'w-full rounded-field border-[1.5px] border-brand-purple bg-surface-card py-3 text-[0.82rem] font-extrabold text-brand-purple transition-colors hover:bg-brand-purple-light focus-visible:shadow-focus-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60';
 
 const CLASSES_DO_LINK =
   'rounded-field font-extrabold text-brand-purple transition-colors hover:text-brand-purple-hover hover:underline focus-visible:shadow-focus-ring focus-visible:outline-none';
@@ -250,17 +243,22 @@ export function LoginPage(): ReactElement {
           {MESSAGES.LOGIN.SUBMIT}
         </SubmitButton>
 
+        {/*
+          Contorno roxo em vez de preenchido: o reenvio nao pode competir com o
+          "Entrar", que continua sendo a acao primaria da tela. As classes saiam
+          daqui para o `SecondaryButton` na TASK-FRONTEND-014 — sao as mesmas, e o
+          comportamento da tela nao mudou.
+        */}
         {ofereceReenvio && (
-          <button
-            type="button"
-            disabled={reenviando}
+          <SecondaryButton
+            isLoading={reenviando}
+            loadingLabel={MESSAGES.FORM.SENDING}
             onClick={() => {
               void aoReenviarConfirmacao();
             }}
-            className={CLASSES_DO_BOTAO_SECUNDARIO}
           >
-            {reenviando ? MESSAGES.FORM.SENDING : MESSAGES.FORM.RESEND_CONFIRMATION}
-          </button>
+            {MESSAGES.FORM.RESEND_CONFIRMATION}
+          </SecondaryButton>
         )}
       </form>
 
