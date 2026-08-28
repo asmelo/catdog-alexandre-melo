@@ -18,7 +18,12 @@ import { comAmbiente } from '../helpers/ambiente';
 
 const MENSAGEM_DE_BLOQUEIO = 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
 
-type NomeDeLimitador = 'loginLimiter' | 'registerLimiter' | 'resendLimiter' | 'refreshLimiter';
+type NomeDeLimitador =
+  | 'loginLimiter'
+  | 'registerLimiter'
+  | 'resendLimiter'
+  | 'refreshLimiter'
+  | 'catalogLimiter';
 
 /**
  * Monta um app com UM limiter e o error handler real — é ele que transforma o
@@ -40,6 +45,14 @@ async function appComLimitador(
 
     aplicacao.use(express.json());
     aplicacao.post('/alvo', limiters[limitador], (_requisicao, resposta) => {
+      resposta.status(200).json({ ok: true });
+    });
+    /**
+     * O limitador da vitrine protege um `GET`, entao ele precisa de um alvo `GET`
+     * — montar so o `POST` faria o teste dele exercitar um verbo que a rota real
+     * nao aceita.
+     */
+    aplicacao.get('/alvo', limiters[limitador], (_requisicao, resposta) => {
       resposta.status(200).json({ ok: true });
     });
     aplicacao.use(errorHandlerMiddleware);
@@ -227,6 +240,52 @@ describe('rate-limit.middleware', () => {
 
       // Assert
       expect(respostas.every((resposta) => resposta.status === 200)).toBe(true);
+    });
+  });
+});
+
+describe('catalogLimiter — a vitrine pública (FEATURE-003)', () => {
+  it('CT-108: a 61ª leitura do mesmo IP em um minuto responde 429 no envelope padrão', async () => {
+    await appComLimitador('catalogLimiter', true, async (aplicacao) => {
+      // Arrange — 60 por minuto. A navegação humana da vitrine (digitar na busca,
+      // trocar de filtro, paginar) produz rajadas de alguns pedidos por segundo e
+      // depois silêncio; sessenta cobre isso com folga, inclusive para vários
+      // visitantes atrás da mesma saída de rede.
+      for (let leitura = 0; leitura < 60; leitura += 1) {
+        const permitida = await request(aplicacao).get('/alvo');
+
+        expect(permitida.status).toBe(200);
+      }
+
+      // Act
+      const bloqueada = await request(aplicacao).get('/alvo');
+
+      // Assert — mesmo código e mesma frase em PT-BR dos demais limitadores.
+      // Nenhum código de erro novo nasceu nesta feature.
+      expect(bloqueada.status).toBe(429);
+      expect(bloqueada.body).toEqual({
+        error: { code: 'TOO_MANY_REQUESTS', message: MENSAGEM_DE_BLOQUEIO },
+      });
+    });
+  });
+
+  it('CT-109: cinquenta leituras seguidas — uso humano intenso — NÃO são bloqueadas', async () => {
+    await appComLimitador('catalogLimiter', true, async (aplicacao) => {
+      // Arrange & Act — o dimensionamento importa tanto quanto o limite existir:
+      // um teto apertado transformaria a busca em algo que trava enquanto se digita.
+      for (let leitura = 0; leitura < 50; leitura += 1) {
+        expect((await request(aplicacao).get('/alvo')).status).toBe(200);
+      }
+    });
+  });
+
+  it('com RATE_LIMIT_ENABLED=false, nenhuma leitura da vitrine é bloqueada', async () => {
+    await appComLimitador('catalogLimiter', false, async (aplicacao) => {
+      // O interruptor é o mesmo dos demais; a suíte de integração roda com ele
+      // desligado de propósito.
+      for (let leitura = 0; leitura < 70; leitura += 1) {
+        expect((await request(aplicacao).get('/alvo')).status).toBe(200);
+      }
     });
   });
 });

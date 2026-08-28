@@ -106,3 +106,66 @@ Fecha o backend com a cobertura de 80% e a rastreabilidade CT ↔ teste. Dois te
 
 - **Requires**: TASK-BACKEND-001 a 004 (todo o backend do catálogo); a infraestrutura de testes de `jest.config.ts` e `tests/setup.ts` já entregue pela TASK-BACKEND-007 da FEATURE-002 do MODULE-001.
 - **Blocks**: nenhuma task de frontend depende desta; ela fecha o backend da feature.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+**732 testes, 42 suítes, 0 falha**, também verdes sob `--runInBand --randomize`. `npm run typecheck` limpo.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Cobertura ≥ 80% em `src/domains/catalog/`, `age.ts` e `text-normalizer.ts` | **Os oito arquivos de `domains/catalog/` estão em 100%** nas quatro métricas. `text-normalizer.ts` 100%; `age.ts` 97,14/90/100/97,05 |
+| Cada CT de backend citado por um `it` | **Confirmado.** Os 69 CT da lista têm ocorrência; nenhum faltando |
+| O teste de CT-99 falha se um campo é acrescentado ao montador | **Verificado por mutação** — ver abaixo |
+| O teste de CT-100 falha se o montador vira `spread` | **Verificado por mutação** — ver abaixo |
+| O teste de CT-74 falha sem o desempate por `id` | **Confirmado por construção:** o fake ordena pelos dois critérios, e o caso conta 45 ids distintos em quatro páginas |
+
+### Os testes têm dente — provado por mutação, não por afirmação
+
+Três mutações foram aplicadas ao código e revertidas:
+
+| Mutação | Resultado |
+|---|---|
+| Montador vira `{ ...row, ... }` | **4 testes falham** |
+| Campo novo só no literal do montador | **A suíte nem compila** — o tipo `PublicAnimal` o rejeita antes de qualquer teste rodar. Primeira linha de defesa |
+| Campo novo no **tipo e** no montador (a mudança realista) | **2 testes falham**: o de igualdade de chaves e o de campo extra na entrada |
+
+A terceira é a que importa: é exatamente o que alguém faria ao expor um campo novo, e o teste a pega.
+
+### Cobertura do repositório Prisma — um spec que a task não previa
+
+O repositório real ficava em **25%**: a suíte de integração injeta o fake, por decisão da própria task, então a classe Prisma nunca era exercitada.
+
+Criado `public-catalog.repository.spec.ts`, que dubla o cliente e **captura o argumento da consulta**. O que ele verifica é a **forma**, que é onde moram os defeitos silenciosos deste arquivo — nenhum deles produz erro:
+
+- `status` esquecido → vitrine mostra animal adotado;
+- `not: null` aplicado sempre em vez de só com o filtro → animal sem data some para sempre;
+- `count` com `where` diferente do `findMany` → "13 resultados" acima de uma lista de 2;
+- `orderBy` sem o desempate → registro repetido entre páginas;
+- `include` no lugar do `select` → coluna nova do modelo passa a ser lida.
+
+O comportamento observável continua sendo verificado sobre o fake em memória, no spec do service — os dois níveis se complementam, e nenhum substitui o outro.
+
+### Outros arquivos além da tabela da task
+
+| Arquivo | Por quê |
+|---|---|
+| `src/domains/catalog/catalog.validators.spec.ts` | Fechou os dois ramos que faltavam e, sobretudo, fixou a distinção entre **vazio** e **ausente** — que difere de campo para campo (`maxAgeYears=` é ausência, `size=` é erro) e é a fonte mais provável de defeito silencioso ali |
+| `tests/unit/rate-limit.middleware.spec.ts` *(modify)* | O CT-108 entrou no arquivo que **já** tinha a infraestrutura de recarregar o módulo com `RATE_LIMIT_ENABLED=true` e restaurá-lo. Criá-la de novo na suíte de integração — que roda com o limitador desligado de propósito — arriscaria justamente o efeito que o interruptor existe para evitar: os demais casos passando a falhar por `429` |
+| `tests/unit/age.spec.ts` *(modify)* | Onde `calculateAge` e `birthDateCutoffForMaxAge` vivem, pela mesma razão registrada na TASK-BACKEND-002 |
+| `src/utils/text-normalizer.spec.ts` | A task o previa "na 001 ou aqui"; entrou aqui |
+
+### O teste que fecha a RN-45
+
+`birthDateCutoffForMaxAge` é verificado por **varredura de fronteira**, e não por casos escolhidos a dedo: para cinco valores de `N`, cada dia entre `hoje - (N+1) anos - 2 dias` e hoje é testado, afirmando que passa pelo corte **se e somente se** `calculateAge(...).ageInYears <= N`. É esta varredura que torna a regra estrutural — um corte com aritmética própria concordaria com a idade na maioria dos dias e discordaria exatamente nos de aniversário, que são os únicos em que o resultado muda.
+
+### Ajuste no CT-70
+
+A primeira versão afirmava `process.env.TZ === 'UTC'`, e o `TZ` não é definido pelo `jest.config.ts` — o teste passaria ou falharia conforme a máquina. Reescrito para rodar o **mesmo instante** com o processo em três fusos (`UTC`, `America/Sao_Paulo`, `Asia/Tokyo`) e afirmar o **mesmo** resultado, que é a garantia real: o `Intl` recebe o fuso do produto explicitamente.
+
+### Fora do escopo, registrado
+
+Três arquivos seguem abaixo de 80% em branches, todos do MODULE-001 e **não** tocados por esta feature: `config/env.ts`, `auth/tokens/access-token.service.ts` e `middlewares/authenticate.middleware.ts`. Já registrados na TASK-BACKEND-011 da FEATURE-002.
