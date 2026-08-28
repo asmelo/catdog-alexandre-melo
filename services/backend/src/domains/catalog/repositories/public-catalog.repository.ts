@@ -26,6 +26,35 @@ export interface PublicCatalogRepository {
   listAvailableAnimals(
     filters: PublicCatalogFilters,
   ): Promise<PaginatedResult<PublicAnimalRow>>;
+
+  /**
+   * As opcoes dos dois campos de selecao da vitrine.
+   *
+   * SO O QUE TEM ANIMAL DISPONIVEL (Decisao D, RN-30, RN-31). Oferecer as ~5.600
+   * cidades do cadastro de apoio produziria uma lista em que quase toda escolha
+   * leva a zero resultados — um filtro que existe para nao funcionar.
+   *
+   * Sao consultas SEPARADAS da listagem, e nao um derivado dela: as opcoes
+   * descrevem o catalogo INTEIRO, e derivar da pagina corrente ofereceria apenas
+   * as cidades dos doze animais visiveis.
+   */
+  listSpeciesWithAvailableAnimals(): Promise<ReadonlyArray<AvailableSpeciesOption>>;
+  listCitiesWithAvailableAnimals(): Promise<ReadonlyArray<AvailableCityOption>>;
+}
+
+export interface AvailableSpeciesOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * ACHATADA (`stateUf` e nao `state: { uf }`): o rotulo "Cidade - UF" e composto na
+ * TELA, e o servidor devolve dado, nao texto de apresentacao.
+ */
+export interface AvailableCityOption {
+  readonly id: string;
+  readonly name: string;
+  readonly stateUf: string;
 }
 
 /**
@@ -174,5 +203,53 @@ export class PrismaPublicCatalogRepository implements PublicCatalogRepository {
       items,
       pagination: { page: filters.page, pageSize: filters.pageSize, total },
     };
+  }
+
+  /**
+   * `some` traduz literalmente "ao menos um animal disponivel" (RN-31), e o faz
+   * como um `EXISTS` no banco — nao traz os animais para contar em memoria.
+   *
+   * ORDENADA POR `nameNormalized`, a coluna que a FEATURE-001 ja mantem em
+   * minusculas, e nao por `name` com `mode: 'insensitive'`: o Prisma NAO suporta
+   * o modo em `orderBy`, e ordenar por `name` cru colocaria "gato" depois de
+   * "Cachorro" e antes de "Coelho" de forma imprevisivel conforme a caixa que o
+   * administrador digitou (CT-50).
+   *
+   * `select` explicito: `nameNormalized`, `createdAt` e qualquer coluna futura
+   * ficam fora da resposta (RN-55, CT-134).
+   *
+   * Sem `take`/`skip`: o recorte por disponibilidade E o limite. Uma lista de
+   * especies com animal disponivel nao chega a dezenas.
+   */
+  async listSpeciesWithAvailableAnimals(): Promise<ReadonlyArray<AvailableSpeciesOption>> {
+    return this.db.species.findMany({
+      where: { animals: { some: { status: AnimalStatus.DISPONIVEL } } },
+      select: { id: true, name: true },
+      orderBy: { nameNormalized: 'asc' },
+    });
+  }
+
+  /**
+   * Mesmo recorte, agrupado por unidade federativa (RN-30, CT-51).
+   *
+   * `[{ state: { uf: 'asc' } }, { name: 'asc' }]`: o campo agrupa por estado e,
+   * dentro de cada um, ordena alfabeticamente — que e como o visitante procura.
+   *
+   * `ibgeCode`, `stateId` e `nameSearch` ficam FORA do `select`. O achatamento
+   * para `stateUf` acontece aqui, e nao no service, porque e a forma da PORTA que
+   * o contrato promete.
+   */
+  async listCitiesWithAvailableAnimals(): Promise<ReadonlyArray<AvailableCityOption>> {
+    const cidades = await this.db.city.findMany({
+      where: { animals: { some: { status: AnimalStatus.DISPONIVEL } } },
+      select: { id: true, name: true, state: { select: { uf: true } } },
+      orderBy: [{ state: { uf: 'asc' } }, { name: 'asc' }],
+    });
+
+    return cidades.map((cidade) => ({
+      id: cidade.id,
+      name: cidade.name,
+      stateUf: cidade.state.uf,
+    }));
   }
 }

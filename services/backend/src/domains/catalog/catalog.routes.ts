@@ -57,3 +57,24 @@ catalogRoutes.get(
   validateRequest({ query: listPublicAnimalsQuerySchema }),
   controller.listAnimals,
 );
+
+/**
+ * `GET /api/catalog/species` e `GET /api/catalog/cities` — as opcoes dos dois
+ * campos de selecao da vitrine.
+ *
+ * SEM `validateRequest` nos dois, ao contrario da listagem: eles nao aceitam
+ * parametro nenhum — nem paginacao, nem busca, nem `stateUf`. Declarar um schema
+ * vazio faria um visitante que enviasse `?x=1` receber `400` em vez de ter o
+ * parametro ignorado, e e a mesma decisao ja registrada em `speciesRoutes.get('/')`
+ * e em `geographyRoutes.get('/')`.
+ *
+ * COM o mesmo `catalogLimiter`: sao publicas como a listagem, e a janela de
+ * 60/min por IP e compartilhada entre as tres — o que corresponde ao uso real,
+ * ja que a tela carrega as opcoes junto da primeira pagina.
+ *
+ * SEM `authenticate` e SEM `authorizeRole`, pelo motivo registrado no topo deste
+ * arquivo. Sao `GET` e apenas `GET`.
+ */
+catalogRoutes.get('/species', catalogLimiter, controller.listSpecies);
+
+catalogRoutes.get('/cities', catalogLimiter, controller.listCities);

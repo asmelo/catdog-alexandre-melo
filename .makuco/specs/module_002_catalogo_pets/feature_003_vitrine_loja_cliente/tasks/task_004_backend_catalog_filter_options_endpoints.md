@@ -98,3 +98,38 @@ Fecha o backend da vitrine com os dois endpoints que alimentam os campos de sele
 
 - **Requires**: TASK-BACKEND-003 (`catalogRoutes`, controller-fábrica, `catalogLimiter`, montagem em `/api/catalog`), TASK-BACKEND-002 (porta do repositório).
 - **Blocks**: TASK-BACKEND-005, TASK-FRONTEND-007.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+`npm run typecheck` com 0 erros e 579 testes do backend verdes. As ACs foram medidas **contra o banco real**, com três espécies e três animais semeados e removidos ao fim.
+
+| Critério de aceite | Medido |
+|---|---|
+| Anônimo recebe `200` nos dois | **Confirmado.** Nenhuma das duas rotas monta `authenticate` ou `authorizeRole` |
+| Só espécie com animal disponível | **Confirmado.** `SemAnimalZZOpcoes` foi criada e **não** apareceu na lista |
+| Cidades: exatamente as que têm animal, com `{id,name,stateUf}` | **Confirmado.** Três cidades entre as ~5.600 do cadastro; chaves exatamente `["id","name","stateUf"]` |
+| Cidades ordenadas por `stateUf` e depois por `name` | **Confirmado:** `ES/Boa Esperança`, `MG/Boa Esperança`, `PR/Campo Magro` |
+| Espécies em ordem alfabética ignorando caixa | **Confirmado:** `AbelhaZZOpcoes` antes de `zebraZZOpcoes` — o caso que `ORDER BY name` cru erraria, já que `z` minúsculo viria antes de `A` maiúsculo em ordenação binária |
+| Último disponível vira Adotado → cidade some (CT-52) | **Confirmado:** 3 cidades → 2, na consulta seguinte |
+| Catálogo sem disponíveis → `200 { items: [] }` | **Confirmado.** As duas consultas devolveram lista vazia antes da semeadura |
+| Sem `ibgeCode`, `stateId` nem `nameSearch` | **Confirmado** por inspeção das chaves devolvidas |
+| `GET /api/species` inalterado | **Confirmado.** A suíte de integração de espécies (FEATURE-001) segue verde sem alteração |
+| `GET /api/states` e `/:uf/cities` inalterados | **Confirmado**, mesma suíte |
+| `429` acima do limite | **Confirmado por construção:** as duas rotas montam o mesmo `catalogLimiter` |
+| Nenhuma monta autenticação; só `GET` | **Confirmado** |
+
+### Notas de implementação
+
+**A ordenação de espécies usa `nameNormalized`, e não `mode: 'insensitive'`.** O Prisma **não** suporta o modo em `orderBy` — só em filtros. A coluna normalizada que a FEATURE-001 já mantém é a única forma de ordenar ignorando caixa sem trazer tudo para memória. A medição mostra por que importa: com `ORDER BY name` cru, `zebra` viria **antes** de `Abelha`, porque a ordenação binária põe as maiúsculas primeiro.
+
+**O achatamento para `stateUf` acontece no repositório**, e não no service. É a forma da **porta** que o contrato promete (`AvailableCityOption`); deixá-lo no service faria a porta devolver a estrutura aninhada do Prisma e obrigaria cada consumidor futuro a repetir o achatamento.
+
+**Dois services, e não um "service de opções" com dois métodos.** São dois casos de uso com ordenações diferentes; um arquivo único mudaria por dois motivos, e a primeira mudança numa das ordenações obrigaria a reler a outra.
+
+**Nenhum `pagination` nas duas respostas.** Acrescentá-lo vazio induziria o frontend a paginar o que não pagina — e a lista, por construção, já é curta: o recorte por disponibilidade **é** o limite, e é por isso que não há `take`/`skip`.
+
+**Os três services compartilham a mesma instância de repositório.** A porta não guarda estado — só o client do Prisma —, e três instâncias seriam três coisas iguais com nomes diferentes.

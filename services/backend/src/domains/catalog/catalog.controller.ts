@@ -2,6 +2,10 @@ import type { RequestHandler, Response } from 'express';
 
 import type { PaginatedResult, PublicAnimal } from '~/domains/catalog/catalog.types';
 import type { ListPublicAnimalsQuery } from '~/domains/catalog/catalog.validators';
+import type { AvailableCitiesResult } from '~/domains/catalog/services/list-available-cities.service';
+import { ListAvailableCitiesService } from '~/domains/catalog/services/list-available-cities.service';
+import type { AvailableSpeciesResult } from '~/domains/catalog/services/list-available-species.service';
+import { ListAvailableSpeciesService } from '~/domains/catalog/services/list-available-species.service';
 import { ListPublicAnimalsService } from '~/domains/catalog/services/list-public-animals.service';
 import { PrismaPublicCatalogRepository } from '~/domains/catalog/repositories/public-catalog.repository';
 import { prisma } from '~/infra/prisma/prisma-client';
@@ -35,8 +39,19 @@ function queryJaValidada(query: unknown): ListPublicAnimalsQuery {
   return query as ListPublicAnimalsQuery;
 }
 
+/**
+ * Os dois endpoints de OPCOES nao tem query nenhuma — nem paginacao, nem busca,
+ * nem `stateUf`. Por isso o terceiro e o quarto genericos ficam `unknown`: um
+ * schema declarado aqui faria um visitante que enviasse `?x=1` receber `400` em
+ * vez de ter o parametro ignorado.
+ */
+type ManipuladorDeOpcoesDeEspecie = RequestHandler<SemParametros, AvailableSpeciesResult, unknown>;
+type ManipuladorDeOpcoesDeCidade = RequestHandler<SemParametros, AvailableCitiesResult, unknown>;
+
 export interface CatalogControllerDependencies {
   readonly listPublicAnimals: ListPublicAnimalsService;
+  readonly listAvailableSpecies: ListAvailableSpeciesService;
+  readonly listAvailableCities: ListAvailableCitiesService;
 }
 
 /**
@@ -62,6 +77,37 @@ export class CatalogController {
     naoArmazenar(resposta);
 
     resposta.status(HTTP_STATUS.OK).json(pagina);
+  };
+
+  /**
+   * `GET /api/catalog/species` — as especies que TEM animal disponivel.
+   *
+   * Catalogo sem nenhum animal disponivel responde `200 { items: [] }`, e nunca
+   * `404`: "nao ha opcao a oferecer" e um estado legitimo da vitrine, nao um
+   * recurso ausente.
+   */
+  readonly listSpecies: ManipuladorDeOpcoesDeEspecie = async (_requisicao, resposta) => {
+    const opcoes = await this.services.listAvailableSpecies.execute();
+
+    naoArmazenar(resposta);
+
+    resposta.status(HTTP_STATUS.OK).json(opcoes);
+  };
+
+  /**
+   * `GET /api/catalog/cities` — as cidades que TEM animal disponivel.
+   *
+   * O `no-store` importa especialmente aqui: a lista e derivada do estado
+   * CORRENTE do catalogo, e uma cidade cujo ultimo animal saiu de disponivel
+   * precisa sumir da consulta seguinte (RN-30, CT-52). Uma resposta em cache
+   * continuaria oferecendo um filtro que ja nao devolve nada.
+   */
+  readonly listCities: ManipuladorDeOpcoesDeCidade = async (_requisicao, resposta) => {
+    const opcoes = await this.services.listAvailableCities.execute();
+
+    naoArmazenar(resposta);
+
+    resposta.status(HTTP_STATUS.OK).json(opcoes);
   };
 }
 
@@ -94,7 +140,14 @@ export function createCatalogController(
 
   const catalogo = new PrismaPublicCatalogRepository(prisma);
 
+  /**
+   * Os tres services compartilham a MESMA instancia de repositorio: a porta nao
+   * guarda estado — so o client do Prisma — e tres instancias seriam tres coisas
+   * iguais com nomes diferentes.
+   */
   return new CatalogController({
     listPublicAnimals: new ListPublicAnimalsService(catalogo),
+    listAvailableSpecies: new ListAvailableSpeciesService(catalogo),
+    listAvailableCities: new ListAvailableCitiesService(catalogo),
   });
 }
