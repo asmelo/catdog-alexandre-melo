@@ -208,3 +208,36 @@ describe('hasActiveFilters', () => {
     expect(hasActiveFilters({ ...EMPTY_FILTERS, pagina: 3 })).toBe(false);
   });
 });
+
+describe('o contrato da RN-49: `parseShowcaseFilters` NUNCA lança', () => {
+  it.each([
+    { cenario: 'chaves repetidas', query: 'porte=grande&porte=pequeno&busca=a&busca=b' },
+    { cenario: 'valores absurdos', query: 'idadeMax=NaN&pagina=Infinity&especie=%%%' },
+    { cenario: 'só sinais', query: '&&&===&' },
+    { cenario: 'chave sem valor', query: 'busca&porte&pagina' },
+    { cenario: 'percent-encoding quebrado', query: 'busca=%E0%A4%A' },
+    { cenario: 'valor gigantesco', query: `busca=${'x'.repeat(5000)}` },
+    { cenario: 'unicode e emoji', query: 'busca=%F0%9F%90%B6%20S%C3%A3o' },
+  ])('$cenario devolve um estado renderizável, sem exceção', ({ query }) => {
+    // Arrange & Act — é o contrato: um link colado num app de mensagens chega
+    // quebrado o tempo todo, e o visitante precisa ver o catálogo.
+    const executar = (): unknown => parseShowcaseFilters(new URLSearchParams(query));
+
+    // Assert
+    expect(executar).not.toThrow();
+
+    const filtros = executar() as ShowcaseFilters;
+
+    expect(typeof filtros.busca).toBe('string');
+    expect(Number.isInteger(filtros.pagina)).toBe(true);
+    expect(filtros.pagina).toBeGreaterThanOrEqual(1);
+  });
+
+  it('com chaves repetidas, o PRIMEIRO valor vence — o comportamento do `URLSearchParams`', () => {
+    // Não é escolha desta função: `get` devolve a primeira ocorrência. O caso
+    // existe para fixar o comportamento, e não para propô-lo.
+    expect(parseShowcaseFilters(new URLSearchParams('porte=grande&porte=pequeno')).porte).toBe(
+      'grande',
+    );
+  });
+});

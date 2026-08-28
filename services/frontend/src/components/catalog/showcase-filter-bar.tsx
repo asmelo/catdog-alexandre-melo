@@ -43,6 +43,28 @@ const CLASSES_DO_CAMPO_DE_TEXTO =
   'w-full rounded-field border-[1.5px] border-hairline bg-surface-input px-4 py-[13px] text-[0.875rem] font-semibold text-ink outline-none transition-colors placeholder:font-semibold placeholder:text-ink-mid focus:border-brand-purple focus:shadow-focus-ring';
 
 /**
+ * Antepoe a opcao NEUTRA — "Todas as espécies", "Todos os portes" — como uma
+ * opcao de verdade, e nao como `placeholder`.
+ *
+ * ============ POR QUE NAO E O `placeholder` DO `SelectField` ============
+ *
+ * Aquele renderiza `<option value="" disabled>`, e o `disabled` e deliberado la:
+ * no formulario de cadastro, "Selecione" nao e um valor valido, e permitir
+ * escolhe-lo de volta faria o administrador desfazer um campo obrigatorio.
+ *
+ * Aqui e o CONTRARIO. "Todas as espécies" E um valor valido — significa "filtro
+ * nao aplicado" —, e o visitante precisa poder voltar a ele. Com o `placeholder`
+ * desabilitado, quem escolhesse "Gato" nunca mais conseguiria remover so aquele
+ * filtro: teria de usar "Limpar filtros" e perder os outros junto.
+ */
+function comOpcaoNeutra(
+  opcoes: ReadonlyArray<SelectOption>,
+  rotuloNeutro: string,
+): ReadonlyArray<SelectOption> {
+  return [{ value: '', label: rotuloNeutro }, ...opcoes];
+}
+
+/**
  * Acrescenta o valor APLICADO as opcoes quando ele nao esta na lista recebida.
  *
  * ============ POR QUE ELE NAO PODE SUMIR ============
@@ -188,8 +210,7 @@ export function ShowcaseFilterBar({
         <SelectField
           id="especie"
           label={MESSAGES.SHOWCASE.SPECIES_LABEL}
-          options={opcoesDeEspecie}
-          placeholder={MESSAGES.SHOWCASE.FILTER_ANY_SPECIES}
+          options={comOpcaoNeutra(opcoesDeEspecie, MESSAGES.SHOWCASE.FILTER_ANY_SPECIES)}
           value={filters.especie ?? ''}
           {...(speciesError === true ? { error: MESSAGES.SHOWCASE.OPTIONS_LOAD_ERROR } : {})}
           onChange={(evento) => {
@@ -200,8 +221,7 @@ export function ShowcaseFilterBar({
         <SelectField
           id="porte"
           label={MESSAGES.SHOWCASE.SIZE_LABEL}
-          options={OPCOES_DE_PORTE}
-          placeholder={MESSAGES.SHOWCASE.FILTER_ANY_SIZE}
+          options={comOpcaoNeutra(OPCOES_DE_PORTE, MESSAGES.SHOWCASE.FILTER_ANY_SIZE)}
           value={filters.porte ?? ''}
           onChange={(evento) => {
             aplicar({ porte: (evento.target.value || null) as ShowcaseSize | null });
@@ -211,8 +231,7 @@ export function ShowcaseFilterBar({
         <SelectField
           id="sexo"
           label={MESSAGES.SHOWCASE.SEX_LABEL}
-          options={OPCOES_DE_SEXO}
-          placeholder={MESSAGES.SHOWCASE.FILTER_ANY_SEX}
+          options={comOpcaoNeutra(OPCOES_DE_SEXO, MESSAGES.SHOWCASE.FILTER_ANY_SEX)}
           value={filters.sexo ?? ''}
           onChange={(evento) => {
             aplicar({ sexo: (evento.target.value || null) as ShowcaseSex | null });
@@ -256,8 +275,7 @@ export function ShowcaseFilterBar({
         <SelectField
           id="cidade"
           label={MESSAGES.SHOWCASE.CITY_LABEL}
-          options={opcoesDeCidade}
-          placeholder={MESSAGES.SHOWCASE.FILTER_ANY_CITY}
+          options={comOpcaoNeutra(opcoesDeCidade, MESSAGES.SHOWCASE.FILTER_ANY_CITY)}
           value={filters.cidade ?? ''}
           {...(cityError === true ? { error: MESSAGES.SHOWCASE.OPTIONS_LOAD_ERROR } : {})}
           onChange={(evento) => {

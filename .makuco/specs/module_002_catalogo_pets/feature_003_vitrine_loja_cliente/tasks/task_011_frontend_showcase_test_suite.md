@@ -106,3 +106,58 @@ Fecha a feature com cobertura de 80% e a rastreabilidade CT ↔ teste no fronten
 
 - **Requires**: TASK-FRONTEND-006 a 010 (toda a vitrine); infraestrutura de testes já entregue pela TASK-FRONTEND-013 da FEATURE-002 do MODULE-001 (`jest.config.ts`, `tests/setup.ts`, `tests/auth-harness.tsx`).
 - **Blocks**: nenhuma. Encerra a feature.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+**Frontend: 681 testes, 42 suítes, 0 falha. Backend: 732 testes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Cobertura ≥ 80% nos arquivos das TASK-FRONTEND-006 a 010 | **Atingido em todos.** Nove dos treze em **100%** nas quatro métricas; o menor é `showcase-page.tsx` com 96,42/100/87,5/96,29 |
+| Cada CT de frontend citado por um `it` | **Confirmado.** Os 65 CT da lista têm ocorrência |
+| Nenhum `fireEvent` e nenhuma requisição real | **Confirmado por varredura** nos specs desta feature; o dublê é do **módulo** `catalog-api`, e a guarda de rede do `setup.ts` segue ativa |
+| Specs pré-existentes verdes, sem alteração de caso | **Confirmado.** Em `app-routes.spec.tsx` só houve **acréscimo**; os demais não foram tocados |
+| CT-16 falha se a descrição virar HTML | **Verificado por mutação: 1 falha** |
+| CT-06 falha se o cabeçalho exibir o e-mail | **Verificado por mutação: 3 falhas** |
+| CT-07/RN-04 falha se a página esperar o bootstrap | **Coberto de duas formas:** a página é renderizada **sem `AuthContext`** (se lesse `useAuth()`, o hook lançaria) e há um caso com `status: 'bootstrapping'` afirmando que a consulta já partiu |
+| CT-36 falha sem a sequência de descarte | **Verificado por mutação: 1 falha** |
+| CT-119 falha se um rótulo virar `placeholder` | **Verificado por mutação: 7 falhas** |
+| Resultado igual em ordens diferentes | **Confirmado em 6 execuções** com `--runInBand --randomize` — depois de corrigir um vazamento, abaixo |
+| Três dependências de execução, nenhuma de desenvolvimento nova | **Confirmado:** 3 e 21, as mesmas |
+
+### Um defeito de produto encontrado pela escrita dos testes
+
+O caso "voltar um campo de seleção ao neutro" **não passava**, e a causa não era o teste: o `SelectField` renderiza a opção de `placeholder` como `<option value="" disabled>`.
+
+No formulário de cadastro o `disabled` é correto — "Selecione" não é um valor válido, e poder escolhê-lo de volta faria o administrador desfazer um campo obrigatório. **Na vitrine é o contrário**: "Todas as espécies" **é** um valor válido, e significa "filtro não aplicado". Com ele desabilitado, quem escolhesse "Gato" **nunca mais conseguiria remover só aquele filtro** — teria de usar "Limpar filtros" e perder os outros junto.
+
+Corrigido na barra, e não no `SelectField`: as opções neutras passaram a ser opções **de verdade**, antepostas à lista, e o `placeholder` deixou de ser usado ali. O primitivo compartilhado, que quatro telas administrativas já usam, ficou intocado.
+
+### Um vazamento entre testes, encontrado pela execução aleatorizada
+
+O caso de `prefers-reduced-motion` sobrescrevia `window.matchMedia` **globalmente** e não o restaurava. Quando a ordem o colocava antes do caso do `smooth`, este via `matches: true` e recebia `auto` — falhando em **três de seis** execuções.
+
+`window.matchMedia` e `Element.prototype.scrollIntoView` são globais do ambiente, e não estado de componente: o `cleanup` do `tests/setup.ts` não os desfaz. Acrescentado `afterEach` que restaura o descritor original de ambos. Seis execuções aleatorizadas seguidas, todas verdes.
+
+Vale o registro: a instabilidade não apareceu em nenhuma execução normal. Apareceu porque o critério de aceite pede execução em ordens diferentes — e foi o próprio critério que pegou o defeito que ele existe para pegar.
+
+### O que esta task entregou, e o que já vinha pronto
+
+Os sete arquivos da tabela foram escritos nas tasks que os exigiam, porque os critérios daquelas eram comportamentais e não havia como aprová-las sem eles — cada review registra isso. Esta task fechou os vãos:
+
+| Acréscimo | Por quê |
+|---|---|
+| CT-04 e CT-07 sob os três estados de sessão | A grade é comparada por `innerHTML` nos três: a vitrine não tem representação privilegiada |
+| `parseShowcaseFilters` nunca lança | Sete entradas absurdas — chaves repetidas, `NaN`, percent-encoding quebrado, 5000 caracteres, emoji. É o contrato da RN-49, e ele só vale verificado |
+| `use-filter-options.spec.ts` | As guardas de desmonte dos dois hooks e a independência entre as consultas de opções |
+| Rolagem ao topo da grade (CT-80) | Com `prefers-reduced-motion` nos dois sentidos |
+| Opção neutra selecionável nos quatro campos | O caso que encontrou o defeito acima |
+| CT-11, CT-126 e a citação de CT-121/CT-122 | Vãos de rastreabilidade |
+
+### Fora do escopo, registrado
+
+`src/config/env.ts` segue em 0% de cobertura. É do MODULE-001, **não** foi tocado por esta feature, e está a zero porque `tests/env-mock.ts` substitui o módulo inteiro em toda a suíte — o mecanismo que permite os testes rodarem sem variáveis de ambiente. Já registrado na TASK-FRONTEND-018 da FEATURE-002.

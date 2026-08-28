@@ -54,7 +54,7 @@ describe('CT-10/CA-08: conteúdo do cartão', () => {
     expect(screen.getByText('Vitória - ES')).toBeInTheDocument();
   });
 
-  it('o ícone de localização NÃO gera anúncio e não é um link para mapa', () => {
+  it('CT-121/CT-122: o ícone de localização NÃO gera anúncio e não é um link para mapa', () => {
     // Arrange & Act
     const { container } = render(<AnimalCard animal={animal()} />);
 
@@ -112,7 +112,7 @@ describe('CT-10/CA-08: conteúdo do cartão', () => {
 });
 
 describe('CT-12/CT-13/CA-46: a imagem', () => {
-  it('CT-12: sem `coverImageUrl`, o marcador substituto ocupa o lugar e os dados continuam', () => {
+  it('CT-12/CT-122: sem `coverImageUrl`, o marcador substituto ocupa o lugar sem ser anunciado', () => {
     // Arrange & Act
     render(<AnimalCard animal={animal({ coverImageUrl: null })} />);
 
@@ -141,6 +141,17 @@ describe('CT-12/CT-13/CA-46: a imagem', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Theo' })).toBeInTheDocument();
   });
 
+  it('CT-11: com `coverImageUrl`, a foto de capa é exibida com o endereço recebido', () => {
+    // Arrange & Act
+    render(<AnimalCard animal={animal({ coverImageUrl: 'https://exemplo/capa.jpg' })} />);
+
+    // Assert
+    expect(screen.getByRole('img', { name: 'Foto de Theo' })).toHaveAttribute(
+      'src',
+      'https://exemplo/capa.jpg',
+    );
+  });
+
   it('CT-127: a imagem é carregada preguiçosamente', () => {
     render(<AnimalCard animal={animal()} />);
 
@@ -160,7 +171,11 @@ describe('CT-16/CT-17/CA-44: conteúdo do administrador é sempre TEXTO', () => 
 
     // Assert — nenhum `<script>` e nenhuma imagem além da capa legítima.
     expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('img[onerror]')).toBeNull();
+    // A única `<img>` é a capa legítima, com o `alt` que o componente monta.
     expect(container.querySelectorAll('img')).toHaveLength(1);
+    // E o texto aparece LITERALMENTE. Só esta asserção passaria mesmo com
+    // injeção parcial — por isso as três juntas.
     expect(container.textContent).toContain('alert(1)');
   });
 });
@@ -197,9 +212,26 @@ describe('CT-120/RNF-22: a grade', () => {
     expect(screen.getByRole('list', { name: '1 animal disponível' })).toBeInTheDocument();
   });
 
-  it('cada cartão é um item da lista, com o nome em nível abaixo do título da página', () => {
+  it('CT-121: cada cartão é um item da lista, com o nome em nível abaixo do título da página', () => {
     render(<AnimalGrid animals={[animal()]} />);
 
     expect(screen.getByRole('heading', { level: 2, name: 'Theo' })).toBeInTheDocument();
+  });
+});
+
+describe('CT-126/RNF-29: a grade responsiva', () => {
+  it('declara 1, 2, 3 e 4 colunas — as quatro divisões exatas de 12', () => {
+    // Arrange & Act — não é escolha estética: 12 é o tamanho de página do
+    // contrato, e as quatro larguras o dividem sem deixar fila incompleta. Cinco
+    // colunas deixariam dois cartões órfãos na última fila em todo carregamento.
+    render(<AnimalGrid animals={[animal({ id: 'a1' })]} />);
+
+    // Assert
+    const lista = screen.getByRole('list');
+
+    expect(lista).toHaveClass('grid-cols-1');
+    expect(lista).toHaveClass('sm:grid-cols-2');
+    expect(lista).toHaveClass('lg:grid-cols-3');
+    expect(lista).toHaveClass('xl:grid-cols-4');
   });
 });

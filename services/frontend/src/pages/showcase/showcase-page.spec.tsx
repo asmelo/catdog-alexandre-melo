@@ -1,13 +1,22 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+
+import { AuthContext } from '~/contexts/auth/auth-context';
 
 import { ShowcasePage } from '~/pages/showcase/showcase-page';
 import { ApiError } from '~/services/api/api-error';
 import * as catalogApi from '~/services/api/catalog-api';
 import type { PublicAnimal } from '~/services/api/catalog-api';
 import { MESSAGES } from '~/utils/messages';
+
+import {
+  criarSessao,
+  USUARIO_ADMIN,
+  USUARIO_CLIENTE,
+  type EstadoDublado,
+} from '../../../tests/auth-harness';
 
 /**
  * A vitrine completa.
@@ -518,5 +527,155 @@ describe('CT-82/CT-83: o estado vive no endereço', () => {
     // Assert — sem tela de erro, e a consulta parte sem os valores descartados.
     expect(screen.getByRole('heading', { level: 2, name: 'Theo' })).toBeInTheDocument();
     expect(api.listPublicAnimals).toHaveBeenCalledWith({ page: 1 });
+  });
+});
+
+describe('CT-04/CT-07: a sessão NÃO altera nada nesta página', () => {
+  /** A mesma página, embrulhada num contexto de sessão dublado. */
+  function renderizarComEstado(estado: EstadoDublado): void {
+    const sessao = criarSessao(estado);
+
+    render(
+      <MemoryRouter initialEntries={['/animais']}>
+        <AuthContext.Provider value={sessao.valor}>
+          <Routes>
+            <Route path="/animais" element={<ShowcasePage />} />
+          </Routes>
+        </AuthContext.Provider>
+      </MemoryRouter>,
+    );
+  }
+
+  it('CT-07/RN-04: com `bootstrapping`, a consulta JÁ FOI disparada', async () => {
+    // Arrange & Act — é esta asserção que impede alguém de "otimizar" a página
+    // esperando o fim do bootstrap e tornando a vitrine dependente de sessão.
+    renderizarComEstado({ status: 'bootstrapping', user: null });
+
+    // Assert
+    await waitFor(() => {
+      expect(api.listPublicAnimals).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByRole('heading', { level: 2, name: 'Theo' })).toBeInTheDocument();
+  });
+
+  it('CT-04: a grade é IDÊNTICA nos três estados de sessão', async () => {
+    // Arrange
+    const capturas: string[] = [];
+
+    for (const estado of [
+      { status: 'anonymous', user: null },
+      { status: 'authenticated', user: USUARIO_CLIENTE },
+      { status: 'authenticated', user: USUARIO_ADMIN },
+    ] as ReadonlyArray<EstadoDublado>) {
+      // Act
+      renderizarComEstado(estado);
+
+      const grade = await screen.findByRole('list', { name: /animal|animais/ });
+
+      capturas.push(grade.innerHTML);
+      cleanup();
+    }
+
+    // Assert — a vitrine não tem representação privilegiada (RN-03, CA-03).
+    expect(capturas[0]).toBe(capturas[1]);
+    expect(capturas[1]).toBe(capturas[2]);
+  });
+});
+
+describe('CT-80/RN-21: a troca de página volta ao topo da GRADE', () => {
+  function prepararPaginacao(): void {
+    const doze = Array.from({ length: 12 }, (_, i) => animal({ id: `id-${String(i)}` }));
+
+    api.listPublicAnimals.mockImplementation((filtros) =>
+      Promise.resolve(pagina(doze, { page: filtros?.page ?? 1, total: 25 })),
+    );
+  }
+
+  /** `scrollIntoView` não existe no jsdom; o dublê é o único jeito de observá-lo. */
+  function espionarRolagem(): jest.Mock {
+    const rolar = jest.fn();
+
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      writable: true,
+      configurable: true,
+      value: rolar,
+    });
+
+    return rolar;
+  }
+
+  /**
+   * `window.matchMedia` e `Element.prototype.scrollIntoView` são globais do
+   * ambiente, e não estado de componente: o `cleanup` do `tests/setup.ts` não os
+   * desfaz. Sem esta restauração, o caso de movimento reduzido deixaria
+   * `matches: true` para quem rodasse depois — e a suíte passaria a depender da
+   * ORDEM, que é exatamente o que o critério de aceite proíbe.
+   *
+   * Descoberto por execução aleatorizada: o caso do `smooth` falhava em três de
+   * seis execuções.
+   */
+  const matchMediaOriginal = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+  const scrollOriginal = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+
+  afterEach(() => {
+    if (matchMediaOriginal === undefined) {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    } else {
+      Object.defineProperty(window, 'matchMedia', matchMediaOriginal);
+    }
+
+    if (scrollOriginal === undefined) {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    } else {
+      Object.defineProperty(Element.prototype, 'scrollIntoView', scrollOriginal);
+    }
+  });
+
+  it('rola para a grade, e não para o topo do documento', async () => {
+    // Arrange — assim o visitante começa a página nova pelo primeiro cartão, com
+    // a barra de filtros ainda à vista.
+    const usuario = userEvent.setup();
+    const rolar = espionarRolagem();
+
+    prepararPaginacao();
+    renderizar();
+    await aguardarGrade();
+
+    // Act
+    await usuario.click(screen.getByRole('button', { name: 'Próxima' }));
+
+    // Assert
+    await waitFor(() => {
+      expect(rolar).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  it('respeita `prefers-reduced-motion`: sem animação quando o visitante a desativou', async () => {
+    // Arrange
+    const usuario = userEvent.setup();
+    const rolar = espionarRolagem();
+
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (consulta: string) => ({
+        matches: consulta.includes('prefers-reduced-motion'),
+        media: consulta,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      }),
+    });
+
+    prepararPaginacao();
+    renderizar();
+    await aguardarGrade();
+
+    // Act
+    await usuario.click(screen.getByRole('button', { name: 'Próxima' }));
+
+    // Assert
+    await waitFor(() => {
+      expect(rolar).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+    });
   });
 });

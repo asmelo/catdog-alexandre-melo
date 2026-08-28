@@ -311,3 +311,26 @@ describe('CT-123/CA-53: teclado', () => {
     }
   });
 });
+
+describe('voltar um campo de seleção ao neutro', () => {
+  it.each([
+    { campo: 'Porte', inicial: { porte: 'grande' as const }, chave: 'porte' },
+    { campo: 'Sexo', inicial: { sexo: 'macho' as const }, chave: 'sexo' },
+    { campo: 'Espécie', inicial: { especie: 'e1' }, chave: 'especie' },
+    { campo: 'Cidade', inicial: { cidade: 'c1' }, chave: 'cidade' },
+  ])('escolher a opção neutra em $campo devolve `null`, e não texto vazio', async ({ campo, inicial, chave }) => {
+    // Arrange — o `''` do `<select>` precisa virar `null` no estado; deixá-lo como
+    // texto vazio faria `hasActiveFilters` continuar verdadeiro e o botão
+    // "Limpar filtros" ficar habilitado sem filtro nenhum.
+    const usuario = userEvent.setup();
+    const aoMudar = jest.fn();
+
+    render(<Harness inicial={{ ...EMPTY_FILTERS, ...inicial }} aoMudar={aoMudar} />);
+
+    // Act
+    await usuario.selectOptions(screen.getByLabelText(campo), '');
+
+    // Assert
+    expect(aoMudar).toHaveBeenCalledWith(expect.objectContaining({ [chave]: null }));
+  });
+});
