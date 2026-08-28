@@ -125,8 +125,9 @@ export function AppRoutes(): ReactElement {
         <Route element={<RoleRoute allow={ROLES_ADMIN} />}>
           <Route path={ROUTE_PATHS.ADMIN_HOME} element={<AdminLayout />}>
             {/*
-              `/admin` nao renderiza mais pagina propria: ele redireciona para a
-              primeira area administrativa disponivel (`ADMIN_DEFAULT_PATH`).
+              `/admin` nao renderiza pagina propria: ele redireciona para a area
+              administrativa padrao (`ADMIN_DEFAULT_PATH`), hoje a de ANIMAIS —
+              o primeiro item da navegacao lateral e a tela do dia a dia.
 
               O redirecionamento fica DENTRO do `AdminLayout` e do `RoleRoute`, e
               nao solto: assim o visitante sem sessao e o `cliente` continuam

@@ -118,8 +118,8 @@ describe('AppRoutes — area administrativa', () => {
     // redireciona para `ADMIN_DEFAULT_PATH`. O destino do pos-login continua
     // sendo `/admin` — `homePathForRole` nao mudou —, e o que este teste observa
     // e que ele termina numa tela real, e nao em branco nem na 404.
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Espécies');
+    expect(rotaAtual()).toBe(ADMIN_DEFAULT_PATH);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Animais');
     expect(screen.getByText(MARCADOR_DE_ADMIN)).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Navegação administrativa' })).toBeInTheDocument();
     // O nome prova que a sessao exibida e a do usuario que autenticou, e nao uma
@@ -133,7 +133,7 @@ describe('AppRoutes — area administrativa', () => {
     // `NavLink` marca `aria-current="page"` sozinho: a indicacao de "onde estou"
     // chega ao leitor de tela sem nenhum atributo escrito a mao, e o sublinhado e
     // apenas o reforco visual dela.
-    expect(screen.getByRole('link', { name: 'Espécies' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Animais' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('o botao Sair do layout administrativo chama logout', async () => {
@@ -207,7 +207,7 @@ describe('AppRoutes — area do cliente', () => {
 
     // A guarda devolve a `homePathForRole('admin')`, que continua sendo `/admin`;
     // e `/admin` que redireciona dali para a primeira area administrativa.
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+    expect(rotaAtual()).toBe(ADMIN_DEFAULT_PATH);
   });
 
   it('o botao Sair do layout de cliente chama logout', async () => {
@@ -276,7 +276,7 @@ describe('AppRoutes — rotas publicas e exclusivas de visitante', () => {
   it('autenticado em /cadastro tambem e redirecionado', () => {
     renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.REGISTER);
 
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+    expect(rotaAtual()).toBe(ADMIN_DEFAULT_PATH);
   });
 
   it('visitante em /cadastro ve o formulario dentro do layout de autenticacao', () => {
@@ -312,7 +312,7 @@ describe('AppRoutes — rotas publicas e exclusivas de visitante', () => {
 describe('AppRoutes — raiz, splash e rota inexistente', () => {
   it('a raiz manda o admin a area administrativa e o cliente a propria area', () => {
     renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ROOT);
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+    expect(rotaAtual()).toBe(ADMIN_DEFAULT_PATH);
   });
 
   it('a raiz manda o cliente a area do cliente', () => {
@@ -467,13 +467,13 @@ describe('AppRoutes — rota de especies e redirecionamento de /admin', () => {
      * redirecionamento por role da FEATURE-002 continuaria verde, porque a rota
      * estaria certa.
      */
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
-    expect(cabecalho).toHaveTextContent('Espécies');
+    expect(rotaAtual()).toBe(ADMIN_DEFAULT_PATH);
+    expect(cabecalho).toHaveTextContent('Animais');
     expect(screen.queryByText('Página não encontrada')).toBeNull();
     expect(screen.getByRole('main')).not.toBeEmptyDOMElement();
   });
 
-  it('CT-39: o destino de /admin e `ADMIN_DEFAULT_PATH`, e ele aponta para as especies', () => {
+  it('CT-39: o destino de /admin e `ADMIN_DEFAULT_PATH`, e ele aponta para os ANIMAIS', () => {
     // Arrange
     renderizar(AUTENTICADO_ADMIN, ROUTE_PATHS.ADMIN_HOME);
 
@@ -481,12 +481,20 @@ describe('AppRoutes — rota de especies e redirecionamento de /admin', () => {
     const destino = rotaAtual();
 
     // Assert
-    // A feature seguinte do modulo muda ESTA constante — e so ela. `ADMIN_HOME`
-    // continua `/admin` porque o `PublicOnlyRoute`, o `RoleRoute` e a tela de
-    // login dependem desse valor.
-    expect(ADMIN_DEFAULT_PATH).toBe(ROUTE_PATHS.ADMIN_SPECIES);
-    expect(ADMIN_DEFAULT_PATH).toBe('/admin/especies');
+    /**
+     * ESTA constante e a unica que decide o destino DEPOIS de `/admin`.
+     * `ADMIN_HOME` continua `/admin` e `homePathForRole('admin')` continua
+     * devolvendo `/admin`, porque o `PublicOnlyRoute`, o `RoleRoute` e a tela de
+     * login dependem desse valor — mover qualquer um dos dois deslocaria o
+     * destino do POS-LOGIN junto, que e outra coisa.
+     *
+     * O valor literal e afirmado de proposito: um dia alguem vai querer mudar a
+     * area padrao de novo, e este caso e o lugar onde a decisao fica registrada.
+     */
+    expect(ADMIN_DEFAULT_PATH).toBe(ROUTE_PATHS.ADMIN_ANIMALS);
+    expect(ADMIN_DEFAULT_PATH).toBe('/admin/animais');
     expect(destino).toBe(ADMIN_DEFAULT_PATH);
+    expect(homePathForRole('admin')).toBe(ROUTE_PATHS.ADMIN_HOME);
   });
 
   it('CT-39: o redirecionamento de /admin usa `replace` — o "voltar" NAO devolve ao laco', async () => {
@@ -495,7 +503,7 @@ describe('AppRoutes — rota de especies e redirecionamento de /admin', () => {
 
     renderizarComHistorico(AUTENTICADO_ADMIN, [ROUTE_PATHS.CHECK_EMAIL, ROUTE_PATHS.ADMIN_HOME], 1);
 
-    expect(rotaAtual()).toBe(ROUTE_PATHS.ADMIN_SPECIES);
+    expect(rotaAtual()).toBe(ADMIN_DEFAULT_PATH);
 
     // Act
     await usuario.click(screen.getByRole('button', { name: 'Voltar no histórico' }));

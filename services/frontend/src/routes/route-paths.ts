@@ -60,15 +60,22 @@ export function adminAnimalEditPath(id: string): string {
 }
 
 /**
- * Destino de `/admin`, que deixou de renderizar pagina propria e passou a
- * redirecionar para a primeira area administrativa disponivel.
+ * Destino de `/admin`, que nao renderiza pagina propria e redireciona para a
+ * primeira area administrativa.
  *
- * Aponta para as especies ENQUANTO A FEATURE DE ANIMAIS NAO EXISTIR. A feature
- * seguinte do modulo muda esta linha — e so ela: `ADMIN_HOME` continua sendo
- * `/admin` e `homePathForRole('admin')` continua devolvendo `/admin`, porque o
- * `PublicOnlyRoute`, o `RoleRoute` e a tela de login dependem desse valor.
+ * APONTA PARA OS ANIMAIS, e nao para as especies, por duas razoes que se somam:
+ * e o primeiro item da navegacao lateral, e e a tela que o administrador de fato
+ * abre no dia a dia — especies e cadastro de apoio, mexido raramente. Cair na
+ * lista de especies faria todo login de administrador comecar com um clique de
+ * correcao.
+ *
+ * `ADMIN_HOME` continua sendo `/admin` e `homePathForRole('admin')` continua
+ * devolvendo `/admin`: o `PublicOnlyRoute`, o `RoleRoute` e a tela de login
+ * dependem desse valor, e mudar QUALQUER um dos dois moveria o destino do
+ * pos-login junto. O que esta constante decide e so o que acontece DEPOIS de
+ * chegar em `/admin`.
  */
-export const ADMIN_DEFAULT_PATH = ROUTE_PATHS.ADMIN_SPECIES;
+export const ADMIN_DEFAULT_PATH = ROUTE_PATHS.ADMIN_ANIMALS;
 
 /**
  * Chaves finitas (nao e assinatura de indice), portanto o acesso abaixo devolve

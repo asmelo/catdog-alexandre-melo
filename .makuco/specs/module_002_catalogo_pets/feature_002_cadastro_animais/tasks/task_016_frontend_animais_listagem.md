@@ -154,9 +154,15 @@ Suíte do frontend: **420 testes, 28 suítes, 0 falha**. `tsc --noEmit` e `tsc -
 
 **7. Marcador `AnimalFormPlaceholder` é um componente, e não `element={null}`.** Com `null` a rota casa e não renderiza nada, e o defeito apareceria como "a tela de cadastro abriu em branco", sem pista.
 
-### Observação de escopo, não corrigida
+### Observação de escopo — RESOLVIDA em 2026-08-28
 
-`ADMIN_DEFAULT_PATH` continua apontando para `/admin/especies`, e o comentário dele ("aponta para as espécies **enquanto a feature de animais não existir**") ficou desatualizado. Mudá-lo é decisão de produto — qual área o `/admin` abre por padrão —, nenhum critério de aceite desta task a exige, e `route-paths.ts` não está na tabela de arquivos. Fica registrado para o fechamento da feature. O teste CT-39, que fixa a constante em `/admin/especies`, muda junto quando a decisão for tomada.
+`ADMIN_DEFAULT_PATH` continuava apontando para `/admin/especies`, e o comentário dele ("aponta para as espécies **enquanto a feature de animais não existir**") ficou desatualizado quando esta task entregou a tela.
+
+Nenhum critério de aceite desta task exigia a mudança, e `route-paths.ts` não estava na sua tabela de arquivos — por isso ficou registrada em vez de aplicada. **O responsável pelo produto decidiu por `/admin/animais`**, e a mudança foi feita depois do fechamento do módulo:
+
+- `ADMIN_DEFAULT_PATH = ROUTE_PATHS.ADMIN_ANIMALS`, com a razão registrada no comentário: é o primeiro item da navegação lateral e a tela do dia a dia, enquanto espécies é cadastro de apoio. Cair na lista de espécies fazia todo login de administrador começar com um clique de correção;
+- `ADMIN_HOME` e `homePathForRole('admin')` **não** foram tocados, e há asserção explícita disso: mover qualquer um dos dois deslocaria o destino do **pós-login**, que é outra coisa;
+- oito casos de `app-routes.spec.tsx` acompanharam. Sete passaram a afirmar contra `ADMIN_DEFAULT_PATH` — que é o que eles de fato significam ("onde quer que `/admin` caia") —, e só o CT-39, que é **sobre** o valor da constante, fixa o literal `/admin/animais`.
 
 ### Arquivo de teste escrito aqui
 
