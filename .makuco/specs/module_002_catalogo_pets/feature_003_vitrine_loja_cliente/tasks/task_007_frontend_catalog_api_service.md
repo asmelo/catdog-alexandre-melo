@@ -97,3 +97,38 @@ Três funções, uma por endpoint público, no formato já estabelecido por `aut
 - **Requires**: TASK-BACKEND-003 e TASK-BACKEND-004 (os três endpoints em contrato); `http-client.ts` com `request` e `RequestOptions.skipRefresh` (FEATURE-002 do MODULE-001).
 - **Coordena com**: FEATURE-002 deste módulo, que enfrenta a mesma ausência de construtor de query string no cliente HTTP. Se ela já tiver entregue um utilitário de montagem, **reaproveitá-lo**; se não, o deste arquivo é o primeiro e a promoção para o cliente compartilhado só acontece quando houver um segundo caso de uso real.
 - **Blocks**: TASK-FRONTEND-009, TASK-FRONTEND-010, TASK-FRONTEND-011.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+**546 testes, 36 suítes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos, sem `any` e sem `as` sobre resposta de rede.
+
+| Critério de aceite | Resultado |
+|---|---|
+| `search: 'são paulo'` sai como `search=s%C3%A3o+paulo` | **Confirmado**, e a releitura por `URLSearchParams` devolve `"são paulo"` |
+| `maxAgeYears: 0` **está presente** | **Confirmado.** A comparação é contra `undefined`, nunca por veracidade |
+| `''` e `undefined` não viram parâmetro | **Confirmado.** A URL sai sem query nenhuma |
+| Sem filtro / só `page: 1` | **Confirmado**: URL limpa e `?page=1` |
+| Token vencido não dispara `/auth/refresh` | **Confirmado nas três funções**, pelo efeito: um `401` produz **uma única** requisição, e nenhuma para `/auth/refresh` |
+| Sem sessão, nenhuma envia `Authorization` | **Confirmado nas três** |
+| O `ApiError` sobe | **Confirmado** |
+| O envelope chega intacto | **Confirmado** nas duas formas — `{items, pagination}` e `{items}` |
+| `http-client.ts` byte a byte igual | **Confirmado:** `git diff` vazio |
+| Três dependências de execução | **Confirmado** |
+
+### O construtor de query foi REAPROVEITADO, não duplicado
+
+A task prevê o caso: "se a FEATURE-002 já tiver entregue um utilitário de montagem, reaproveitá-lo". Ela entregou — `src/services/api/build-query.ts`, na TASK-FRONTEND-012 —, e é ele que monta a cadeia aqui. Nenhuma segunda implementação foi criada.
+
+Uma diferença de contrato precisou de tratamento local: o `buildQuery` **preserva** a cadeia vazia, deliberadamente — para ele, texto vazio é um valor, e há teste da FEATURE-002 fixando isso. Para a vitrine não é: `?search=` chegaria ao backend como busca por texto vazio. A conversão `'' → undefined` mora em `textoOuAusente`, **no catalog-api**, e não no utilitário compartilhado — mudá-lo quebraria o contrato que a outra feature congelou.
+
+### Nota sobre o `skipRefresh`
+
+Ele é a decisão central da task e não é observável no nível do `fetch`. O teste verifica o **efeito**: um `401` produz exatamente **uma** chamada, e nenhuma para `/auth/refresh`. Sem a opção, o cliente HTTP faria a renovação, a falha dela dispararia o `onSessionExpired` registrado pelo `AuthProvider`, e o visitante seria mandado ao login — de dentro da única tela do produto que não exige sessão.
+
+### Arquivo de teste escrito aqui
+
+`catalog-api.spec.ts` não consta da tabela da TASK-FRONTEND-011, que dubla o **módulo** `catalog-api` nas telas. Sem este spec, nenhum teste observaria a URL emitida, a codificação dos parâmetros nem o `skipRefresh` — os quatro critérios centrais da task ficariam sem verificação em lugar nenhum. É o mesmo par que a FEATURE-002 já tem em `animals-api.ts` + `animals-api.spec.ts`.
