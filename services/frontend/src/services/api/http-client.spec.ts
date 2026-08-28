@@ -231,6 +231,98 @@ describe('http-client — requisicao base', () => {
   });
 });
 
+describe('http-client — corpo FormData (TASK-FRONTEND-012)', () => {
+  /** Formulário com um campo de texto e um arquivo, como o cadastro de animal envia. */
+  function formularioDeAnimal(): FormData {
+    const formulario = new FormData();
+
+    formulario.append('name', 'Theo');
+    formulario.append('images', new File(['conteudo-da-imagem'], 'theo.jpg', { type: 'image/jpeg' }));
+
+    return formulario;
+  }
+
+  it('envia o próprio FormData como corpo, sem serializar', async () => {
+    const espiao = instalarFetch(() => Promise.resolve(respostaJson(201, { id: 'a1' })));
+    const formulario = formularioDeAnimal();
+
+    await request(CAMINHO_PROTEGIDO, { method: 'POST', body: formulario });
+
+    const [init] = chamadasPara(espiao, URL_PROTEGIDA);
+
+    // `toBe` e não `toEqual`: tem de ser o MESMO objeto. Um `FormData`
+    // reconstruído perderia os arquivos.
+    expect(init?.body).toBe(formulario);
+    expect(init?.credentials).toBe('include');
+  });
+
+  it('OMITE Content-Type quando o corpo é FormData', async () => {
+    const espiao = instalarFetch(() => Promise.resolve(respostaJson(201, {})));
+
+    await request(CAMINHO_PROTEGIDO, { method: 'POST', body: formularioDeAnimal() });
+
+    const [init] = chamadasPara(espiao, URL_PROTEGIDA);
+
+    // O cabeçalho do multipart carrega o `boundary`, que só quem serializa o
+    // corpo conhece. Definido aqui, sairia sem ele e o servidor não separaria as
+    // partes — falha de parser, antes de qualquer regra de negócio.
+    expect(init?.headers).not.toHaveProperty('Content-Type');
+    expect(init?.headers).toMatchObject({ Accept: 'application/json' });
+  });
+
+  it('corpo objeto comum continua com JSON.stringify e Content-Type — sem regressão', async () => {
+    const espiao = instalarFetch(() => Promise.resolve(respostaJson(201, {})));
+
+    await request(CAMINHO_PROTEGIDO, { method: 'POST', body: { nome: 'Rex' } });
+
+    const [init] = chamadasPara(espiao, URL_PROTEGIDA);
+
+    expect(init?.body).toBe(JSON.stringify({ nome: 'Rex' }));
+    expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json' });
+  });
+
+  it('após 401 e renovação, a segunda tentativa leva o MESMO FormData — e não um corpo vazio', async () => {
+    let tentativasNoProtegido = 0;
+
+    const espiao = instalarFetch((url) => {
+      if (url === URL_DE_REFRESH) {
+        return Promise.resolve(respostaJson(200, SESSAO_RENOVADA));
+      }
+
+      tentativasNoProtegido += 1;
+
+      return Promise.resolve(
+        tentativasNoProtegido === 1
+          ? respostaJson(401, envelopeDeErro('UNAUTHORIZED', 'Não autenticado.'))
+          : respostaJson(201, { id: 'a1' }),
+      );
+    });
+
+    setSessionRefresher(renovadorQuePassaPelaRede());
+
+    const formulario = formularioDeAnimal();
+
+    await expect(
+      request(CAMINHO_PROTEGIDO, { method: 'POST', body: formulario }),
+    ).resolves.toEqual({ id: 'a1' });
+
+    const [primeira, segunda] = chamadasPara(espiao, URL_PROTEGIDA);
+
+    // É esta asserção que justifica o contrato aceitar `FormData` em vez de um
+    // corpo já serializado: um `Blob` consumido ou um stream iriam VAZIOS aqui, e
+    // o cadastro chegaria ao servidor sem as imagens, sem erro a que se agarrar.
+    expect(primeira?.body).toBe(formulario);
+    expect(segunda?.body).toBe(formulario);
+
+    const reenviado = segunda?.body;
+
+    expect(reenviado).toBeInstanceOf(FormData);
+    expect(reenviado instanceof FormData ? reenviado.get('name') : null).toBe('Theo');
+    expect(reenviado instanceof FormData ? reenviado.get('images') : null).toBeInstanceOf(File);
+  });
+});
+
+
 describe('http-client — traducao de erro', () => {
   it('reconstitui o envelope do backend em ApiError com code, message e details', async () => {
     instalarFetch(() =>

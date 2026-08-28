@@ -76,3 +76,27 @@
 
 - **Requires**: nenhuma task desta feature.
 - **Blocks**: TASK-FRONTEND-013 (a camada de API depende de `FormData` e de `buildQuery`), e por transitividade as telas.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+| Critério de aceite | Resultado |
+|---|---|
+| `FormData` vai como corpo e sem `Content-Type` | **Confirmado.** Asserção com `toBe` (mesmo objeto, não equivalente) e `not.toHaveProperty('Content-Type')` |
+| Corpo objeto inalterado | **Confirmado.** `JSON.stringify` e `Content-Type: application/json`, caso de regressão explícito |
+| Sem corpo, nenhum `Content-Type` | **Confirmado**, caso pré-existente segue verde |
+| `FormData` reenviado íntegro após 401 + renovação | **Confirmado.** As duas chamadas recebem o **mesmo** objeto; o reenviado ainda tem o campo `name` e o `File` |
+| Fila single-flight intacta (1 refresh, 1 `onSessionExpired`) | **Confirmado**, casos pré-existentes verdes sem alteração |
+| Trava da promessa rejeitada intacta | **Confirmado**, caso pré-existente verde |
+| `buildQuery` | **Confirmado.** 7 casos: zero, um e vários parâmetros, `undefined` descartado, escape de acento, `0` preservado e texto vazio enviado |
+| Suíte de autenticação verde | **Confirmado.** 317 testes, 0 falha; `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos |
+| `git diff` toca só `RequestOptions`, `montarCabecalhos` e `executarFetch` | **Confirmado por varredura do diff sem comentários:** 4 hunks, todos nos três alvos. `refreshSession`, `executarRenovacao`, `markSessionRestored`, `setSessionRefresher`, `setOnSessionExpired`, a trava e `CAMINHOS_FORA_DO_CICLO` **byte a byte iguais** |
+
+### Nota de implementação
+
+`montarCabecalhos` passou a receber o corpo em vez do booleano, como a task pede. Os dois casos-limite ficaram cobertos por construção: `0`, `''` e `null` como corpo continuam recebendo `Content-Type: application/json` (são corpos JSON válidos), e só `undefined` significa ausência.
+
+O comentário de `request` ganhou o registro da consequência aceita — o envio de 25 MB que pega a sessão vencida sobe os arquivos duas vezes —, que a própria task manda documentar. Nenhuma linha de comportamento da fila foi tocada.

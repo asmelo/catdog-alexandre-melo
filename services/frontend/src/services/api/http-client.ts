@@ -61,7 +61,10 @@ export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
 export interface RequestOptions {
   readonly method?: HttpMethod;
-  /** Serializado como JSON. Ausente significa requisicao sem corpo. */
+  /**
+   * Serializado como JSON, exceto `FormData`, enviado como esta. Ausente
+   * significa requisicao sem corpo.
+   */
   readonly body?: unknown;
   /**
    * Desliga a renovacao automatica para esta chamada. Necessario em `login` e
@@ -206,10 +209,22 @@ function montarUrl(caminho: string): string {
   return `${base}${caminho}`;
 }
 
-function montarCabecalhos(temCorpo: boolean): Record<string, string> {
+/**
+ * Recebe o CORPO, e nao um booleano "tem corpo": a decisao passou a depender do
+ * TIPO do corpo, e nao mais so da presenca dele.
+ *
+ * Com `FormData`, o `Content-Type` tem de ser OMITIDO — jamais definido como
+ * `multipart/form-data`. O cabecalho do multipart carrega um `boundary`, um valor
+ * aleatorio por requisicao que separa as partes do corpo, e so quem serializa o
+ * corpo sabe qual e. Quem define o cabecalho a mao o envia sem `boundary`, e o
+ * servidor nao consegue separar as partes: a requisicao falha no parser, antes de
+ * qualquer regra de negocio, com um erro que nao aponta para a causa. Deixado
+ * ausente, o navegador escreve o cabecalho completo ao serializar o `FormData`.
+ */
+function montarCabecalhos(corpo: unknown): Record<string, string> {
   const cabecalhos: Record<string, string> = { Accept: 'application/json' };
 
-  if (temCorpo) {
+  if (corpo !== undefined && !(corpo instanceof FormData)) {
     cabecalhos['Content-Type'] = 'application/json';
   }
 
@@ -234,14 +249,15 @@ function montarCabecalhos(temCorpo: boolean): Record<string, string> {
  * apareceria so no deploy.
  */
 async function executarFetch(caminho: string, opcoes: RequestOptions): Promise<Response> {
-  const temCorpo = opcoes.body !== undefined;
+  const corpo = opcoes.body;
+  const temCorpo = corpo !== undefined;
 
   try {
     return await fetch(montarUrl(caminho), {
       method: opcoes.method ?? 'GET',
       credentials: 'include',
-      headers: montarCabecalhos(temCorpo),
-      ...(temCorpo ? { body: JSON.stringify(opcoes.body) } : {}),
+      headers: montarCabecalhos(corpo),
+      ...(temCorpo ? { body: corpo instanceof FormData ? corpo : JSON.stringify(corpo) } : {}),
     });
   } catch {
     // `fetch` so rejeita quando nao houve resposta HTTP alguma (DNS, offline,
@@ -352,6 +368,16 @@ function podeRenovarSessao(caminho: string, opcoes: RequestOptions): boolean {
  * 3. UMA segunda tentativa com o token novo. Um `401` aqui e final — nao existe
  *    terceira chamada a `executarFetch` em nenhum caminho deste modulo, o que se
  *    verifica contando as duas ocorrencias na funcao abaixo.
+ *
+ * O CORPO E ENVIADO DUAS VEZES nesse caminho, e com `FormData` isso continua
+ * correto: o objeto e reserializado a cada `fetch`. E a razao de o contrato
+ * aceitar `FormData` e nao um corpo ja serializado — um `Blob` consumido ou um
+ * stream iriam VAZIOS na segunda tentativa, e o cadastro chegaria ao servidor sem
+ * as imagens, sem erro nenhum a que se agarrar.
+ *
+ * Consequencia aceita: um envio de 25 MB que pega a sessao vencida sobe os
+ * arquivos duas vezes. E o preco de manter a retentativa unica que ja existia, e
+ * e preferivel a fazer o administrador refazer o formulario inteiro.
  */
 export async function request<T>(caminho: string, opcoes: RequestOptions = {}): Promise<T> {
   const resposta = await executarFetch(caminho, opcoes);
