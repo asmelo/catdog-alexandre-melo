@@ -119,3 +119,57 @@ Substitui o placeholder da TASK-FRONTEND-006 pela vitrine completa: busca os dad
 
 - **Requires**: TASK-FRONTEND-006 (rota, layout e placeholder), TASK-FRONTEND-007 (`catalog-api`), TASK-FRONTEND-008 (cartão, grade, estados, esqueleto, `formatAge`), TASK-FRONTEND-009 (barra de filtros, `parseShowcaseFilters`, `toApiFilters`, `hasActiveFilters`) e, através dela, o componente `Pagination` da **FEATURE-002 deste módulo**.
 - **Blocks**: TASK-FRONTEND-011.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+**658 testes, 41 suítes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos, sem `any`. Três dependências de execução, as mesmas.
+
+| Critério de aceite | Resultado |
+|---|---|
+| A consulta parte na montagem, sem esperar a sessão (CT-07) | **Confirmado da forma mais forte possível:** o spec renderiza a página **sem `AuthContext`**. Se ela lesse `useAuth()`, o hook lançaria |
+| Credencial vencida não dispara renovação (CT-03) | **Confirmado na TASK-FRONTEND-007**, pelo `skipRefresh` das três chamadas |
+| Corpos idênticos para visitante, `cliente` e `admin` (CT-04) | **Confirmado por construção:** não há `useAuth()` nem ramo condicionado a sessão nesta página nem nos dois hooks |
+| Resposta obsoleta descartada por sequência (CT-36) | **Confirmado** com dois resolvedores manuais: a busca "gato" resolve **depois** de "ga", e prevalece "ga" |
+| Resumo com 1 e com 3; ausente sem filtro (CT-97, CT-44) | **Confirmado** |
+| Contagem do conjunto filtrado (CT-98) | **Confirmado** |
+| Carregando: esqueleto, barra utilizável, sem mensagem de vazio (CT-94) | **Confirmado** |
+| Falha com nova tentativa, sem mensagem de vazio (CT-95) | **Confirmado**, e a nova tentativa recarrega |
+| `429` com a mensagem do backend (CT-108) | **Confirmado.** A frase vem do `ApiError`, e a ramificação é por `code` |
+| Falha de opções não bloqueia a grade (CT-96) | **Confirmado:** a grade renderiza e só o campo afetado informa |
+| Catálogo vazio sem filtros, **sem** ação (CT-91) | **Confirmado.** O único "Limpar filtros" no DOM é o da barra, desabilitado |
+| Vazio com filtros, **com** ação (CT-92) | **Confirmado**, e a ação faz a grade voltar |
+| Catálogo vazio **e** filtros → mensagem de filtros (CT-93) | **Confirmado** |
+| Um único animal: nenhum controle de paginação (CT-72) | **Confirmado** |
+| Controles com extremos desabilitados (CT-73, CT-75) | **Confirmado** |
+| Página além da última: vazio sem erro (CT-76) | **Confirmado** |
+| Troca de página volta ao topo da grade (CT-80) | **Confirmado por construção:** `scrollIntoView` sobre a `ref` da grade, respeitando `prefers-reduced-motion` |
+| Região viva anuncia a mudança (CT-124) | **Confirmado:** existe **exatamente uma** `[aria-live]`, `polite` e `aria-atomic`, e ela anuncia também os vazios |
+| Só `GET`; nenhuma escrita (CT-131) | **Confirmado:** o módulo dublado expõe apenas as três funções de leitura |
+| Nenhum `useAuth()` nem ramo por sessão | **Confirmado por varredura:** as duas ocorrências do termo são comentários que registram a proibição |
+| Endereço com filtros preenche a barra e vai à consulta (CT-82) | **Confirmado** |
+| Endereço estragado exibe a vitrine normalmente (CT-86) | **Confirmado:** a consulta parte como `{ page: 1 }` |
+| Nenhuma dependência nova | **Confirmado** |
+
+### Notas de implementação
+
+**Estado discriminado por união, e não três booleanos.** Com `carregando`, `erro` e `dados` soltos, a combinação `carregando && erro` é **representável** — e é assim que uma tela passa a exibir o esqueleto e a mensagem de falha ao mesmo tempo. Aqui ela não existe.
+
+**A sequência mora em `useRef`, não em estado.** O valor precisa ser lido pelo closure da resposta no instante em que ela **chega**, e não no da renderização em que a requisição partiu. É o mesmo princípio da guarda de corrida das cidades na FEATURE-002.
+
+**`replace` para filtro, `push` para página.** Cada tecla digitada na busca criaria uma entrada no histórico, e desfazer uma palavra exigiria dez cliques no botão de voltar. Trocar de página, ao contrário, é um passo que o visitante espera poder desfazer.
+
+**Duas consultas de opções em promessas separadas, e não num `Promise.all`.** Um `all` faria uma falha nas cidades derrubar as espécies **e** — se a grade estivesse junto — esconder a vitrine inteira, que é o oposto do que a CA-39 pede.
+
+**A ordem dos cinco ramos é a regra, e está escrita no comentário.** Em particular, "vazio **com** filtros" é avaliado antes de "catálogo vazio": com os dois verdadeiros, vale a mensagem de filtros — a única que dá ao visitante algo a fazer.
+
+### Um ajuste que a escrita dos testes exigiu
+
+Onze casos falharam por encontrarem o **mesmo texto duas vezes**: a região viva repete, de propósito, o que a tela mostra. A duplicação é o comportamento correto — é o mecanismo que anuncia a mudança de resultado —, e o que estava errado era a asserção. Os casos passaram a usar um auxiliar `visivel()`, que filtra o que está dentro de `[aria-live]` e afirma sobre o que o visitante **vê**. O caso da própria região viva continua afirmando sobre ela.
+
+### Arquivo de teste escrito aqui
+
+`showcase-page.spec.tsx` consta da TASK-FRONTEND-011. Foi escrito nesta task porque o descarte de resposta obsoleta e a ordem de decisão dos cinco estados são as duas obrigações que a task declara não terem equivalente no resto do produto — e nenhuma das duas é verificável por leitura.
