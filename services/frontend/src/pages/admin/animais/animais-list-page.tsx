@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { EmptyState, ErrorState, LoadingIndicator } from '~/components/ui/feedback-states';
 import { Pagination } from '~/components/ui/pagination';
@@ -54,11 +54,34 @@ type EstadoDaColecao =
  * esse orcamento estourar — voltariam o bootstrap da sessao, o layout e as
  * fontes. Aqui so a consulta da listagem e refeita.
  */
+/**
+ * Mensagem que o formulario deixa no estado da navegacao ao voltar para ca.
+ *
+ * `unknown` conferido campo a campo, e nao uma conversao: `location.state` e
+ * controlado pelo HISTORICO do navegador — qualquer pagina pode empurrar
+ * qualquer coisa ali, e um `as { message: string }` faria a tela renderizar o que
+ * viesse.
+ */
+function mensagemDaNavegacao(estado: unknown): string | null {
+  if (typeof estado !== 'object' || estado === null || !('message' in estado)) {
+    return null;
+  }
+
+  const { message } = estado as { readonly message: unknown };
+
+  return typeof message === 'string' && message !== '' ? message : null;
+}
+
 export function AnimaisListPage(): ReactElement {
   const navigate = useNavigate();
+  const location = useLocation();
   const [pagina, setPagina] = useState(1);
   const [colecao, setColecao] = useState<EstadoDaColecao>({ kind: 'loading' });
-  const [resultado, setResultado] = useState<ResultadoDaOperacao | null>(null);
+  const [resultado, setResultado] = useState<ResultadoDaOperacao | null>(() => {
+    const mensagem = mensagemDaNavegacao(location.state);
+
+    return mensagem === null ? null : { variant: 'success', message: mensagem };
+  });
   const [animalParaExcluir, setAnimalParaExcluir] = useState<Animal | null>(null);
   const [excluindo, setExcluindo] = useState(false);
 

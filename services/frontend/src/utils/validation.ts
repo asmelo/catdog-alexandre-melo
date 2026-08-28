@@ -36,6 +36,16 @@ const TAMANHO_MINIMO_DO_NOME_DE_ESPECIE = 2;
  */
 const TAMANHO_MAXIMO_DO_NOME_DE_ESPECIE = 60;
 
+/** RN-04 do MODULE-002 / FEATURE-002. Contado sobre o nome JA normalizado. */
+const TAMANHO_MINIMO_DO_NOME_DE_ANIMAL = 2;
+const TAMANHO_MAXIMO_DO_NOME_DE_ANIMAL = 60;
+
+/** RN-23. Contado sobre a descricao JA normalizada quanto a espacos. */
+const TAMANHO_MAXIMO_DA_DESCRICAO = 1000;
+
+/** RN-19. A janela aceita para a data de nascimento. */
+const IDADE_MAXIMA_EM_ANOS = 30;
+
 /**
  * Colapso de espacos da RN-03. `\s+` e nao `' +'`: o campo aceita colagem de
  * texto, e tabulacao e quebra de linha precisam virar um unico espaco como
@@ -339,6 +349,138 @@ export interface SpeciesNameFormValues {
  */
 export function validateSpeciesNameForm(values: SpeciesNameFormValues): FieldErrors {
   return erroDoCampo('name', erroDeNomeDeEspecie(values.name));
+}
+
+/* ------------------------------------------------------------------------- */
+/*  MODULE-002 / FEATURE-002 — formulário de animal                           */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Valores do formulário de animal, todos como TEXTO — é o que os controles
+ * produzem, e converter antes de validar esconderia justamente o caso vazio.
+ *
+ * `state` está aqui porque o formulário o tem, mas **não** é validado no envio:
+ * ele existe só para reduzir a lista de cidades, e o que trafega é a cidade
+ * (RN-26a). Validar o estado criaria um segundo campo obrigatório que o contrato
+ * não conhece.
+ */
+export interface AnimalFormValues {
+  readonly name: string;
+  readonly speciesId: string;
+  readonly size: string;
+  readonly sex: string;
+  readonly cityId: string;
+  readonly birthDate: string;
+  readonly description: string;
+}
+
+function erroDeNomeDeAnimal(bruto: string): string | undefined {
+  const normalizado = bruto.replace(SEQUENCIA_DE_ESPACOS, ' ').trim();
+
+  if (normalizado === '') {
+    return MESSAGES.VALIDATION.FIELD_REQUIRED;
+  }
+
+  if (normalizado.length < TAMANHO_MINIMO_DO_NOME_DE_ANIMAL) {
+    return MESSAGES.VALIDATION.ANIMAL_NAME_TOO_SHORT;
+  }
+
+  if (normalizado.length > TAMANHO_MAXIMO_DO_NOME_DE_ANIMAL) {
+    return MESSAGES.VALIDATION.ANIMAL_NAME_TOO_LONG;
+  }
+
+  return undefined;
+}
+
+/**
+ * A descrição é OPCIONAL: vazia não é erro (RN-22). O limite é contado sobre o
+ * texto já normalizado quanto a espaços, como no `descricaoSchema` do backend —
+ * contar o texto cru faria os dois lados discordarem sobre um texto colado com
+ * espaços repetidos.
+ */
+function erroDeDescricao(bruto: string): string | undefined {
+  const normalizado = bruto.replace(SEQUENCIA_DE_ESPACOS, ' ').trim();
+
+  return normalizado.length > TAMANHO_MAXIMO_DA_DESCRICAO
+    ? MESSAGES.VALIDATION.DESCRIPTION_TOO_LONG
+    : undefined;
+}
+
+/**
+ * Data de nascimento — OPCIONAL, e comparada em DATA PURA.
+ *
+ * =============== A COMPARAÇÃO É POR TEXTO, E ISSO É DELIBERADO ===============
+ *
+ * `AAAA-MM-DD` ordena lexicograficamente na mesma ordem cronológica, então
+ * comparar as strings dá o mesmo resultado que comparar datas — sem construir
+ * `Date` nenhum. Construir um `Date` a partir de `"2022-11-05"` produz meia-noite
+ * UTC, e ler o dia a oeste de Greenwich devolve o dia anterior: a validação
+ * recusaria "hoje" como futura durante as três primeiras horas de cada dia no
+ * Brasil.
+ *
+ * ================= ESTA VERIFICAÇÃO É APENAS RETORNO IMEDIATO =================
+ *
+ * O "hoje" usado aqui é o do RELÓGIO DO NAVEGADOR, que pode estar em qualquer
+ * fuso ou simplesmente errado. A recusa que vale é a do servidor, feita em
+ * America/Sao_Paulo (RN-19). Replicar aqui a lógica de fuso do backend criaria
+ * duas implementações da mesma regra, que divergiriam em silêncio — e a
+ * divergência apareceria como um formulário que aceita o que o servidor recusa.
+ */
+function erroDeDataDeNascimento(valor: string, hoje: string): string | undefined {
+  if (valor === '') {
+    return undefined;
+  }
+
+  if (valor > hoje) {
+    return MESSAGES.VALIDATION.BIRTH_DATE_IN_FUTURE;
+  }
+
+  const limite = new Date(`${hoje}T00:00:00Z`);
+
+  limite.setUTCFullYear(limite.getUTCFullYear() - IDADE_MAXIMA_EM_ANOS);
+
+  /**
+   * `toISOString().slice(0, 10)` sobre um `Date` construído e lido inteiramente
+   * em UTC: nenhum fuso local participa da conta, e o resultado é a mesma data
+   * pura de trinta anos atrás em qualquer máquina.
+   */
+  return valor < limite.toISOString().slice(0, 10)
+    ? MESSAGES.VALIDATION.BIRTH_DATE_TOO_OLD
+    : undefined;
+}
+
+/** Data local do navegador em `AAAA-MM-DD`, sem passar por UTC. */
+function hojeLocal(): string {
+  const agora = new Date();
+  const mes = String(agora.getMonth() + 1).padStart(2, '0');
+  const dia = String(agora.getDate()).padStart(2, '0');
+
+  return `${String(agora.getFullYear())}-${mes}-${dia}`;
+}
+
+/**
+ * Valida o formulário de animal — a MESMA função para o cadastro e para a edição.
+ *
+ * Uma só, e não uma por modo: o `PATCH` do backend reusa o schema do `POST`, e
+ * uma segunda cópia divergiria da primeira na primeira revisão de limite.
+ *
+ * `hoje` entra por parâmetro, com o relógio do navegador como padrão: é o que
+ * permite exercitar as bordas da janela de 30 anos sem congelar o relógio do
+ * processo de teste.
+ */
+export function validateAnimalForm(
+  values: AnimalFormValues,
+  hoje: string = hojeLocal(),
+): FieldErrors {
+  return {
+    ...erroDoCampo('name', erroDeNomeDeAnimal(values.name)),
+    ...erroDoCampo('speciesId', erroDeObrigatoriedade(values.speciesId)),
+    ...erroDoCampo('size', erroDeObrigatoriedade(values.size)),
+    ...erroDoCampo('sex', erroDeObrigatoriedade(values.sex)),
+    ...erroDoCampo('cityId', erroDeObrigatoriedade(values.cityId)),
+    ...erroDoCampo('birthDate', erroDeDataDeNascimento(values.birthDate, hoje)),
+    ...erroDoCampo('description', erroDeDescricao(values.description)),
+  };
 }
 
 /** Acucar de leitura para `Object.keys(erros).length > 0` nos pontos de submissao. */

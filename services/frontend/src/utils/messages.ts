@@ -85,6 +85,12 @@ const TEXTOS_COMPARTILHADOS_COM_O_BACKEND = {
   SPECIES_NAME_TOO_SHORT: 'O nome da espécie deve ter no mínimo 2 caracteres.',
   /** Literal do `MESSAGES.NAME_TOO_LONG` do `species.messages.ts` do backend. */
   SPECIES_NAME_TOO_LONG: 'O nome da espécie deve ter no máximo 60 caracteres.',
+  /** Literais do `animals.messages.ts` do backend, verificados no cliente antes do envio. */
+  ANIMAL_NAME_TOO_SHORT: 'O nome do animal deve ter no mínimo 2 caracteres.',
+  ANIMAL_NAME_TOO_LONG: 'O nome do animal deve ter no máximo 60 caracteres.',
+  DESCRIPTION_TOO_LONG: 'A descrição deve ter no máximo 1000 caracteres.',
+  BIRTH_DATE_IN_FUTURE: 'A data de nascimento não pode ser futura.',
+  BIRTH_DATE_TOO_OLD: 'Informe uma data de nascimento dos últimos 30 anos.',
 } as const;
 
 export const MESSAGES = {
@@ -106,6 +112,20 @@ export const MESSAGES = {
      */
     NAME_TOO_SHORT: TEXTOS_COMPARTILHADOS_COM_O_BACKEND.SPECIES_NAME_TOO_SHORT,
     NAME_TOO_LONG: TEXTOS_COMPARTILHADOS_COM_O_BACKEND.SPECIES_NAME_TOO_LONG,
+
+    /**
+     * Formulário de animal. Entram aqui pelo mesmo critério das de espécie:
+     * `validateAnimalForm` reprova o campo ANTES de qualquer requisição, e o
+     * `VALIDATION_ERROR` que as produziria no servidor nunca chega a sair.
+     *
+     * Cada literal é idêntico ao do `animals.messages.ts` do backend, para que o
+     * administrador leia a mesma frase venha a recusa de onde vier.
+     */
+    ANIMAL_NAME_TOO_SHORT: TEXTOS_COMPARTILHADOS_COM_O_BACKEND.ANIMAL_NAME_TOO_SHORT,
+    ANIMAL_NAME_TOO_LONG: TEXTOS_COMPARTILHADOS_COM_O_BACKEND.ANIMAL_NAME_TOO_LONG,
+    DESCRIPTION_TOO_LONG: TEXTOS_COMPARTILHADOS_COM_O_BACKEND.DESCRIPTION_TOO_LONG,
+    BIRTH_DATE_IN_FUTURE: TEXTOS_COMPARTILHADOS_COM_O_BACKEND.BIRTH_DATE_IN_FUTURE,
+    BIRTH_DATE_TOO_OLD: TEXTOS_COMPARTILHADOS_COM_O_BACKEND.BIRTH_DATE_TOO_OLD,
   },
 
   /** Texto comum a mais de uma tela do fluxo. */
@@ -278,6 +298,27 @@ export const MESSAGES = {
     PAGE_TITLE: 'Animais',
     CREATE_TITLE: 'Cadastrar Animal',
     EDIT_TITLE: 'Editar Animal',
+
+    /** Rótulos do formulário, na ordem em que a captura os apresenta. */
+    NAME_LABEL: 'Nome',
+    BIRTH_DATE_LABEL: 'Data de nascimento',
+    SPECIES_LABEL: 'Espécie',
+    SIZE_LABEL: 'Porte',
+    SEX_LABEL: 'Sexo',
+    STATE_LABEL: 'Estado',
+    CITY_LABEL: 'Cidade',
+    DESCRIPTION_LABEL: 'Descrição',
+    ACCEPTS_OTHER_ANIMALS_LABEL: 'Aceita outros animais',
+    NEEDS_LARGE_SPACE_LABEL: 'Precisa de espaço grande',
+
+    /** Opção vazia dos campos de seleção do formulário. */
+    SELECT_PLACEHOLDER: 'Selecione',
+
+    /** Carga do animal em edição e do próprio formulário. */
+    FORM_LOADING_LABEL: 'Carregando o formulário…',
+    FORM_LOAD_ERROR: 'Não foi possível carregar o animal. Tente novamente.',
+    SPECIES_LOAD_ERROR: 'Não foi possível carregar as espécies. Tente novamente.',
+    SAVING: 'Salvando…',
     CREATE_BUTTON: 'Cadastrar Animal',
     SAVE_BUTTON: 'Salvar',
     CANCEL_BUTTON: 'Cancelar',

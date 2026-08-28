@@ -7,6 +7,7 @@ import { AdminLayout } from '~/layouts/admin-layout';
 import { AuthLayout } from '~/layouts/auth-layout';
 import { ClientLayout } from '~/layouts/client-layout';
 import { AnimaisListPage } from '~/pages/admin/animais/animais-list-page';
+import { AnimalFormPage } from '~/pages/admin/animais/animal-form-page';
 import { SpeciesPage } from '~/pages/admin/species-page';
 import { CheckEmailPage } from '~/pages/auth/check-email-page';
 import { ConfirmEmailPage } from '~/pages/auth/confirm-email-page';
@@ -71,18 +72,6 @@ function RedirecionamentoDaRaiz(): ReactElement {
  * unico consumidor de destino dinamico do projeto e a tela de login, que passa
  * pelo `readRedirectTarget` (GHSA-wrjc-x8rr-h8h6).
  */
-/**
- * Marcador das duas rotas de formulario ate a TASK-FRONTEND-017.
- *
- * Um componente de verdade, e nao `element={null}`: com `null` a rota casa e
- * renderiza nada, e o defeito aparece como "a tela de cadastro abriu em branco"
- * sem nenhuma pista. Aqui a ausencia e explicita para quem estiver navegando, e o
- * `TODO` fica visivel no roteador para quem estiver lendo o codigo.
- */
-function AnimalFormPlaceholder(): ReactElement {
-  return <p className="text-[0.875rem] font-semibold text-ink-mid">Em construção.</p>;
-}
-
 export function AppRoutes(): ReactElement {
   return (
     <Routes>
@@ -132,10 +121,14 @@ export function AppRoutes(): ReactElement {
               deste bloco nasceria desprotegida.
             */}
             <Route path="animais" element={<AnimaisListPage />} />
-            {/* TODO(TASK-FRONTEND-017): trocar pelo formulário de cadastro. */}
-            <Route path="animais/novo" element={<AnimalFormPlaceholder />} />
-            {/* TODO(TASK-FRONTEND-017): trocar pelo formulário de edição. */}
-            <Route path="animais/:id/editar" element={<AnimalFormPlaceholder />} />
+            {/*
+              O MESMO componente nas duas rotas: ele distingue cadastro de edicao
+              pela presenca do `:id`. Dois componentes teriam quinze campos, uma
+              montagem de `FormData` e um tratamento de erro por `code`
+              duplicados.
+            */}
+            <Route path="animais/novo" element={<AnimalFormPage />} />
+            <Route path="animais/:id/editar" element={<AnimalFormPage />} />
           </Route>
           <Route path={`${ROUTE_PATHS.ADMIN_HOME}/*`} element={<NotFoundPage />} />
         </Route>

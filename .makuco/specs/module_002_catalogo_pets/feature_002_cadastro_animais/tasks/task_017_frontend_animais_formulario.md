@@ -99,3 +99,60 @@ Entrega `/admin/animais/novo` e `/admin/animais/:id/editar` — o mesmo formulá
 
 - **Requires**: TASK-FRONTEND-013 (API, tipos, rótulos), TASK-FRONTEND-014 (primitivas), TASK-FRONTEND-015 (campo de imagens), TASK-FRONTEND-016 (rotas registradas), TASK-BACKEND-005, TASK-BACKEND-007 e TASK-BACKEND-008, FEATURE-001 do MODULE-002 (`GET /api/species`).
 - **Blocks**: TASK-FRONTEND-018.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO — com uma primitiva a mais, reportada abaixo
+
+Suíte do frontend: **441 testes, 29 suítes, 0 falha**. `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos. `package.json` sem diff — **três** dependências de execução, as mesmas.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Cadastro: título, campos vazios, alternâncias desligadas, sem status no DOM (CT-22, CT-68, CA-09) | **Confirmado.** Duas buscas independentes por rótulo de status/situação não encontram nada |
+| Vazio: todos os obrigatórios de uma vez, foco no primeiro, sem requisição (CT-09, CA-12) | **Confirmado.** Cinco mensagens simultâneas — o Estado **não** entra, porque não é campo do contrato (RN-26a) — e o foco vai para "Nome" |
+| Cidade desabilitada com "Escolha primeiro o estado" (CT-34) | **Confirmado** |
+| "Carregando cidades..." e depois só cidades do PR (CT-35, CT-36) | **Confirmado** com a resposta retida manualmente, e não por temporização — o estado intermediário é observado de verdade |
+| Trocar de estado descarta a cidade (CT-37, CA-15, CA-17) | **Confirmado.** "Campo Magro - ES" fica impossível de representar, e não é um erro a validar |
+| Resposta obsoleta descartada (CT-38, RN-57) | **Confirmado** com dois resolvedores manuais, invertendo a ordem de chegada: prevalece a lista de "ES" e nenhuma cidade do PR aparece |
+| Falha de cidades com nova tentativa, nunca campo vazio (CT-39, CA-16) | **Confirmado**, e o resto do formulário continua preenchível; a nova tentativa recarrega |
+| Edição: estado e cidade corretos (CT-40) | **Confirmado** |
+| Cidade gravada fora da lista ativa continua escolhida (CT-41, CA-47) | **Confirmado.** Sem isso o `<select>` ficaria com valor sem `<option>` casando e o navegador o exibiria em branco |
+| Corpo com `cityId`, sem estado e sem status (CA-17, CT-14) | **Confirmado sobre o `FormData` real** que o dublê recebeu, e não sobre o que a tela aparenta |
+| `keepImageIds` na ordem exibida, arquivo novo em `images` (CT-58, CT-61) | **Confirmado.** Removida a capa, sobra `["img-1"]` e um arquivo |
+| "x" + "Cancelar" não remove nada (CT-59, CA-25) | **Confirmado**: nenhuma chamada de escrita, e volta à listagem |
+| Dois "Salvar" criam um animal (CT-93) | **Confirmado** com a requisição retida: o botão fica desabilitado e a segunda submissão é ignorada |
+| `409 ANIMAL_STALE_UPDATE` preserva tudo (CT-66, CA-29) | **Confirmado.** Formulário aberto, nome editado e data ainda lá |
+| `503 IMAGE_STORAGE_UNAVAILABLE` junto às imagens, preservando o preenchido (CT-55, CT-56) | **Confirmado**, inclusive a imagem em preparo |
+| Só obrigatórios conclui (CT-02, CA-11) | **Confirmado**, com `birthDate`, `description` e `images` **omitidos** — não enviados vazios |
+| Teclado: campos, alternâncias, imagens, botões e Enter (CT-94, CA-42) | **Confirmado** |
+| Nenhuma dependência acrescentada | **Confirmado** |
+
+### Uma primitiva a mais, e por quê
+
+A task manda **reportar** em vez de improvisar se faltar primitiva. Faltou: **campo de texto de uma linha com rótulo VISÍVEL e marcação de obrigatoriedade**.
+
+O `TextField` existente não serve, e não é questão de estilo: o rótulo dele é `sr-only` por decisão de layout do `reference.html` (registrada no próprio componente), e ele não tem asterisco, porque nenhum campo do fluxo de autenticação precisava. A captura mostra "Nome *" **acima** do campo, e o CA-09 exige a obrigatoriedade anunciada. Acrescentar as duas coisas ao `TextField` mudaria a anatomia de um componente usado por quatro telas de autenticação já aprovadas.
+
+Criado `src/components/ui/text-input-field.tsx` — **dentro** da base de componentes e sobre o mesmo `FieldShell` de `SelectField`, `TextareaField` e `DateField`. É o quarto membro de uma família de três que a TASK-FRONTEND-014 montou; a lacuna é do plano dela, não desta task. Nenhuma linha do `TextField` foi tocada.
+
+### Decisões de implementação
+
+**1. `useStateCities` guarda a UF em `ref`, não em estado.** O valor precisa ser lido pelo closure da resposta no instante em que ela **chega**, não no da renderização em que a requisição partiu. Um estado daria ao closure o valor de quando ele foi criado — que é exatamente o valor obsoleto que a guarda existe para descartar.
+
+**2. A cidade gravada é acrescentada às opções quando não consta da lista.** A alternativa — deixar o `<select>` com um valor que nenhuma `<option>` casa — faz o navegador exibi-lo em branco, e o administrador salva o animal sem perceber que perdeu a localização.
+
+**3. Comparação de data por TEXTO, sem construir `Date`.** `AAAA-MM-DD` ordena lexicograficamente na mesma ordem cronológica. Construir `Date` a partir de `"2022-11-05"` produz meia-noite UTC, e ler o dia a oeste de Greenwich devolve o anterior: a validação recusaria "hoje" como futura durante as três primeiras horas de cada dia no Brasil. O limite de 30 anos é o único ponto que usa `Date`, e o faz inteiramente em UTC (`setUTCFullYear` + `toISOString`), sem fuso local na conta.
+
+**4. `hoje` entra por parâmetro em `validateAnimalForm`,** com o relógio do navegador como padrão: permite exercitar as bordas da janela de 30 anos sem congelar o relógio do processo de teste.
+
+**5. Foco no primeiro erro pela ordem do DOM,** e não pela ordem das chaves do mapa: é a ordem em que o administrador percorre o formulário, e mandar o foco para o terceiro campo quando o primeiro também está errado faria a tela rolar para trás.
+
+**6. A mensagem de sucesso viaja no `state` da navegação** e é lida pela listagem. A leitura confere o formato campo a campo em vez de converter com `as`: `location.state` é controlado pelo histórico do navegador, e qualquer página pode empurrar qualquer coisa ali.
+
+**7. `marcaDeAlteracao` em `ref`.** O token de concorrência não participa de nenhuma renderização; como estado provocaria um render a mais por carga.
+
+### Observação
+
+`RNF-13` pede indicação de progresso durante o envio de imagens grandes. O que existe é o botão em estado "Salvando…" com `aria-busy` — sem barra de percentual, porque a TASK-FRONTEND-012 proíbe explicitamente acrescentar indicador de progresso de envio ao cliente HTTP ("nenhum é exigido por esta feature e cada um mexeria no fluxo do `401`"). Uma barra real exigiria `XMLHttpRequest` ou streams de requisição, fora do escopo das duas tasks.
