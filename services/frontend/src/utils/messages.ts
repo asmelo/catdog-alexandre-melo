@@ -454,6 +454,76 @@ export const MESSAGES = {
   },
 
   /**
+   * Vitrine publica (`/animais`) — MODULE-002 / FEATURE-003.
+   *
+   * MESMO CRITERIO dos blocos anteriores: so entra aqui o que NENHUMA resposta da
+   * API carrega. A mensagem do limitador de taxa NAO esta neste bloco — ela chega
+   * pronta em `ApiError.message`, e duplica-la criaria duas fontes de verdade.
+   *
+   * `ANIMALS.LOAD_ERROR` e `FORM.UNEXPECTED_ERROR` sao REAPROVEITADAS pela tela em
+   * vez de recriadas: a frase "Não foi possível carregar os animais. Tente
+   * novamente." ja existe no catalogo desde a FEATURE-002.
+   */
+  SHOWCASE: {
+    PAGE_TITLE: 'Animais para adoção',
+
+    /** Opcao neutra dos tres campos de selecao — "filtro nao aplicado". */
+    FILTER_ANY_SPECIES: 'Todas as espécies',
+    FILTER_ANY_CITY: 'Todas as cidades',
+    FILTER_ANY_SIZE: 'Todos os portes',
+    FILTER_ANY_SEX: 'Todos os sexos',
+    FILTER_ANY_AGE: 'Qualquer idade',
+
+    SEARCH_LABEL: 'Buscar por nome ou cidade',
+    SEARCH_PLACEHOLDER: 'Buscar por nome ou cidade',
+    SPECIES_LABEL: 'Espécie',
+    CITY_LABEL: 'Cidade',
+    SIZE_LABEL: 'Porte',
+    SEX_LABEL: 'Sexo',
+    MAX_AGE_LABEL: 'Idade máxima',
+
+    /**
+     * O filtro de idade OMITE quem nao tem data de nascimento (RN-42), e isso
+     * precisa ser dito: sem o aviso, o visitante conclui que o animal sumiu do
+     * catalogo.
+     */
+    MAX_AGE_HINT: 'Animais sem data de nascimento não aparecem com este filtro.',
+
+    CLEAR_FILTERS: 'Limpar filtros',
+
+    LOADING_LABEL: 'Carregando animais…',
+
+    /** Catalogo vazio: nao ha o que limpar, entao nao ha acao. */
+    EMPTY_CATALOG: 'Nenhum animal disponível para adoção no momento. Volte em breve!',
+    /** Sem resultado COM filtros: a saida e limpar. */
+    EMPTY_FILTERED: 'Nenhum animal encontrado com os filtros aplicados.',
+
+    OPTIONS_LOAD_ERROR: 'Não foi possível carregar as opções de filtro. Tente novamente.',
+
+    AGE_UNKNOWN: 'Idade não informada',
+    AGE_UNDER_ONE_MONTH: 'Menos de 1 mês',
+
+    /** Texto alternativo da foto. Identifica o ANIMAL, e nao o arquivo. */
+    photoAlt(nome: string): string {
+      return `Foto de ${nome}`;
+    },
+
+    /** Nome da regiao da grade, com a contagem — anunciado ao entrar na lista. */
+    gridLabel(total: number): string {
+      return total === 1 ? '1 animal disponível' : `${String(total)} animais disponíveis`;
+    },
+
+    /** Resumo acima da grade. Concordância correta, como em `ANIMALS.totalLabel`. */
+    resultsSummary(total: number): string {
+      if (total === 0) {
+        return 'Nenhum animal encontrado';
+      }
+
+      return total === 1 ? '1 animal encontrado' : `${String(total)} animais encontrados`;
+    },
+  },
+
+  /**
    * Area interna do cliente. Minima por contrato: existe para tornar o
    * redirecionamento por role verificavel, e o conteudo real e de outras
    * features.

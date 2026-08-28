@@ -137,3 +137,51 @@ A base de componentes do projeto tem sete peças, todas de formulário de autent
 
 - **Requires**: TASK-FRONTEND-007 (tipo `PublicAnimal`); tokens do Tailwind e os sete componentes existentes (FEATURE-002 do MODULE-001).
 - **Blocks**: TASK-FRONTEND-010 (a página compõe estes componentes), TASK-FRONTEND-011.
+
+---
+
+## Revisão — 2026-08-28
+
+**Status**: APROVADO
+
+**573 testes, 38 suítes, 0 falha.** `tsc --noEmit` e `tsc -p tsconfig.test.json` limpos, sem `any`. Três dependências de execução, as mesmas.
+
+| Critério de aceite | Resultado |
+|---|---|
+| Cartão do "Theo" com foto, nome, etiqueta de espécie, localização, três características e descrição (CT-10) | **Confirmado** |
+| Sem `coverImageUrl`: marcador substituto, mesma altura, demais dados presentes (CT-12) | **Confirmado.** Nenhuma imagem é anunciada; a altura é fixa nos dois caminhos |
+| `onError` troca para o marcador, sem laço (CT-13) | **Confirmado.** O ícone de imagem quebrada nunca aparece |
+| Armazenamento fora do ar: todos os textos permanecem (CT-111) | **Confirmado por construção** — o mesmo caminho do CT-13, aplicado a todos os cartões |
+| Localização do dado da API, ícone não abre mapa (CA-47) | **Confirmado.** Nenhum `fetch` (a guarda de rede reprovaria) e nenhum `<a>` |
+| Os cinco casos de idade (CT-58, CT-66, CT-67, CT-68) | **Confirmado** nos dois níveis: na função pura e no cartão |
+| Sem descrição, a área NÃO está no DOM (CT-14) | **Confirmado** contando os `<p>` do cartão |
+| 1000 caracteres ficam inteiros no documento (CT-15) | **Confirmado.** `textContent` com 1000 caracteres e `line-clamp-3` na classe — a truncagem é CSS |
+| Marcação no nome, espécie, cidade ou descrição aparece literalmente (CT-16, CT-17) | **Confirmado nos quatro campos:** nenhum `<script>` criado, uma única `<img>` (a capa legítima), e o texto `alert(1)` presente como conteúdo |
+| Nenhum `dangerouslySetInnerHTML` | **Confirmado por varredura** de `src/`: a única ocorrência é a palavra dentro de um comentário que a proíbe |
+| Nenhum `<button>` nem `<a>` no cartão (CT-130) | **Confirmado** |
+| Grade anunciada como lista com a contagem (CT-120) | **Confirmado**, com concordância no singular e no plural |
+| Nome do animal em nível abaixo do título da página (CT-121) | **Confirmado**: `<h2>` |
+| Ícone e marcador substituto não geram anúncio (CT-122) | **Confirmado**: todos os SVG do cartão têm `aria-hidden` |
+| `alt` é "Foto de {nome}" | **Confirmado** |
+| 1 / 2 / 3 / 4 colunas por breakpoint (CT-126) | **Confirmado por construção:** `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4` |
+| `loading="lazy"` (CT-127) | **Confirmado** |
+| Contraste ≥ 4.5:1 nas etiquetas | **Medido e registrado junto do token:** `species` 5.31:1, `trait` 8.11:1 |
+| Nenhuma dependência nova | **Confirmado** |
+
+### Notas de implementação
+
+**As quatro larguras são 1/2/3/4 por aritmética, não por estética.** 12 — o tamanho de página do contrato — é divisível pelas quatro, então nenhuma delas termina com fila incompleta. Cinco colunas deixariam dois cartões órfãos na última fila em **todo** carregamento.
+
+**O `onError` troca estado, e não `src`.** Reatribuir `event.currentTarget.src` dispara um carregamento novo, que pode falhar de novo e chamar o handler outra vez — em laço. Trocar o estado do React encerra numa passagem, e o `falhou` já verdadeiro torna o handler idempotente.
+
+**`motion-safe:animate-pulse` no esqueleto**, e não `animate-pulse`: a variante do Tailwind só aplica a animação quando o visitante **não** pediu movimento reduzido no sistema. Pulsação contínua é gatilho conhecido para sensibilidade vestibular.
+
+**O `EmptyState` desta task não é o de `feedback-states.tsx`.** Aquele serve às listas administrativas e não aceita ação; alterá-lo tocaria duas telas já aprovadas. O novo vive em `components/ui/empty-state.tsx` e aceita `action`, porque a diferença entre os dois vazios da vitrine é a mensagem **e** a presença da saída.
+
+### Um desvio pontual da convenção de teste, justificado
+
+A convenção do projeto é "**sempre `userEvent`, nunca `fireEvent`**", e ela foi mantida em toda interação. O caso CT-13 usa `dispatchEvent` nativo dentro de `act`, porque **a falha de carregamento de uma imagem não é uma interação do usuário** — é um evento do navegador, que o `userEvent` não modela. Também não é `fireEvent`: é o evento real, despachado no elemento real. A razão está registrada no comentário do caso.
+
+### Arquivos de teste escritos aqui
+
+`animal-card.spec.tsx` e `format-age.spec.ts` constam da TASK-FRONTEND-011. Foram escritos nesta task porque os critérios de segurança do cartão — marcação do administrador renderizada como texto — e os de acessibilidade são o risco declarado dela, e adiá-los deixaria a barreira contra XSS sem verificação por três tasks.
